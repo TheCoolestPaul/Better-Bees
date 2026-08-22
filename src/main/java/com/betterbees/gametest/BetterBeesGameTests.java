@@ -3,6 +3,7 @@ package com.betterbees.gametest;
 import com.betterbees.BetterBees;
 import com.betterbees.ai.BeeAi;
 import com.betterbees.config.BetterBeesConfig;
+import com.betterbees.compat.HiveOverlayData;
 import com.betterbees.hive.HiveBreedingService;
 import com.betterbees.hive.HiveHoneyService;
 import com.betterbees.hive.HiveFlowerIndex;
@@ -303,7 +304,7 @@ public final class BetterBeesGameTests {
             Bee bee = EntityType.BEE.create(helper.getLevel());
             helper.assertTrue(bee != null, "searching bee should be constructible");
             bee.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
-            index.request(helper.getLevel(), absoluteHive, bee);
+            index.request(helper.getLevel(), absoluteHive, bee, 0);
             bee.discard();
         }
         index.tick(helper.getLevel(), absoluteHive);
@@ -324,17 +325,107 @@ public final class BetterBeesGameTests {
         helper.assertTrue(first != null && second != null, "searching bees should be constructible");
         first.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
         second.moveTo(first.getX(), first.getY(), first.getZ());
-        index.request(helper.getLevel(), absoluteHive, first);
+        index.request(helper.getLevel(), absoluteHive, first, 0);
         index.tick(helper.getLevel(), absoluteHive);
-        HiveFlowerIndex.Request firstRequest = index.request(helper.getLevel(), absoluteHive, first);
-        HiveFlowerIndex.Request secondRequest = index.request(helper.getLevel(), absoluteHive, second);
+        HiveFlowerIndex.Request firstRequest = index.request(helper.getLevel(), absoluteHive, first, 0);
+        HiveFlowerIndex.Request secondRequest = index.request(helper.getLevel(), absoluteHive, second, 0);
         helper.assertTrue(firstRequest.status() == HiveFlowerIndex.Status.FOUND
                         && secondRequest.status() == HiveFlowerIndex.Status.FOUND,
                 "one hive scan should make cached flowers available to every nestmate");
         helper.assertFalse(firstRequest.flower().equals(secondRequest.flower()),
                 "soft reservations should spread equally placed bees across available flowers");
+        helper.assertValueEqual(index.reservationCount(firstRequest.flower()), 1,
+                "first flower reservation count");
+        helper.assertValueEqual(index.reservationCount(secondRequest.flower()), 1,
+                "second flower reservation count");
+        index.release(first.getUUID());
+        helper.assertValueEqual(index.reservationCount(firstRequest.flower()), 0,
+                "released reservation count");
+        index.invalidate(secondRequest.flower());
+        helper.assertValueEqual(index.reservationCount(secondRequest.flower()), 0,
+                "invalidated flower reservation count");
+        index.tick(helper.getLevel(), absoluteHive);
+        helper.assertValueEqual(index.lastTickChecks(), 0,
+                "scanner should pause after every requester receives a flower");
         first.discard();
         second.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void collectiveFlowerScanPausesAfterCompletedMiss(GameTestHelper helper) {
+        HiveFlowerIndex index = new HiveFlowerIndex();
+        BlockPos absoluteHive = helper.absolutePos(HIVE_POS);
+        Bee bee = EntityType.BEE.create(helper.getLevel());
+        helper.assertTrue(bee != null, "searching bee should be constructible");
+        bee.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
+        index.request(helper.getLevel(), absoluteHive, bee, 0);
+
+        for (int tick = 0; tick < 3_000 && index.completedGeneration() == 0; tick++) {
+            index.tick(helper.getLevel(), absoluteHive);
+        }
+        helper.assertTrue(index.completedGeneration() > 0L, "flower generation should complete");
+        helper.assertValueEqual(index.activeDemandCount(), 0, "demand after completed generation");
+        helper.assertValueEqual(index.lastTickGenerationCompletions(), 1,
+                "generation completion diagnostic");
+        index.tick(helper.getLevel(), absoluteHive);
+        helper.assertValueEqual(index.lastTickChecks(), 0, "completed miss must pause scanning");
+
+        HiveFlowerIndex.Request miss = index.request(helper.getLevel(), absoluteHive, bee, 0);
+        helper.assertTrue(miss.status() == HiveFlowerIndex.Status.COMPLETE_MISS,
+                "requester should acknowledge the completed miss");
+        index.request(helper.getLevel(), absoluteHive, bee, miss.completedGeneration());
+        index.tick(helper.getLevel(), absoluteHive);
+        helper.assertTrue(index.lastTickChecks() > 0, "renewed demand should resume scanning");
+        bee.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void nonFlowersUseOneConstantTimeCacheProbe(GameTestHelper helper) {
+        HiveFlowerIndex index = new HiveFlowerIndex();
+        BlockPos absoluteHive = helper.absolutePos(HIVE_POS);
+        Bee bee = EntityType.BEE.create(helper.getLevel());
+        helper.assertTrue(bee != null, "searching bee should be constructible");
+        bee.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
+        index.request(helper.getLevel(), absoluteHive, bee, 0);
+        index.tick(helper.getLevel(), absoluteHive);
+        helper.assertValueEqual(index.lastTickCacheProbes(), index.lastTickChecks(),
+                "each loaded non-flower should use exactly one membership probe");
+        bee.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void hundredHiveIndexesRespectAggregateBudget(GameTestHelper helper) {
+        BlockPos absoluteHive = helper.absolutePos(HIVE_POS);
+        int totalChecks = 0;
+        for (int i = 0; i < 100; i++) {
+            HiveFlowerIndex index = new HiveFlowerIndex();
+            Bee bee = EntityType.BEE.create(helper.getLevel());
+            helper.assertTrue(bee != null, "searching bee should be constructible");
+            bee.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
+            index.request(helper.getLevel(), absoluteHive, bee, 0);
+            index.tick(helper.getLevel(), absoluteHive);
+            totalChecks += index.lastTickChecks();
+            bee.discard();
+        }
+        helper.assertTrue(totalChecks <= 100 * BetterBeesConfig.flowerScanBudget(),
+                "one hundred active hive indexes must respect the aggregate scan ceiling");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void overlayDataUsesAuthoritativeHiveValues(GameTestHelper helper) {
+        BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
+        HiveHoneyService.set(hive, 7);
+        fill(helper, hive, BetterBeesConfig.hiveCapacity());
+
+        HiveOverlayData data = HiveOverlayData.from(hive);
+        helper.assertValueEqual(data.honey(), 7, "overlay honey");
+        helper.assertValueEqual(data.honeyCapacity(), BetterBeesConfig.honeyCapacity(), "overlay honey capacity");
+        helper.assertValueEqual(data.bees(), BetterBeesConfig.hiveCapacity(), "overlay occupants");
+        helper.assertValueEqual(data.beeCapacity(), BetterBeesConfig.hiveCapacity(), "overlay bee capacity");
         helper.succeed();
     }
 

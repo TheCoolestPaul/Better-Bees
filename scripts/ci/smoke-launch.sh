@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 <server|client> <NeoForge version>" >&2
+if [[ $# -lt 2 ]]; then
+  echo "Usage: $0 <server|client> <NeoForge version> [additional Gradle arguments...]" >&2
   exit 2
 fi
 
@@ -29,6 +29,13 @@ case "$mode" in
     ;;
 esac
 
+for argument in "${@:3}"; do
+  if [[ "$argument" == "-PwithJade=true" ]]; then
+    markers+=('Loaded plugin from com\.betterbees\.compat\.jade\.BetterBeesJadePlugin')
+    break
+  fi
+done
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
@@ -38,7 +45,7 @@ if [[ "$mode" == "server" ]]; then
   printf 'eula=true\n' > run/eula.txt
 fi
 
-command=(./gradlew --no-daemon "-Pneo_version=${neo_version}" "$gradle_task")
+command=(./gradlew --no-daemon "-Pneo_version=${neo_version}" "${@:3}" "$gradle_task")
 if [[ "$mode" == "client" ]]; then
   # Hosted runners have no physical audio device. OpenAL's null backend keeps
   # that environmental limitation separate from client/mod initialization.
@@ -63,7 +70,7 @@ setsid "${command[@]}" >"$log_file" 2>&1 &
 smoke_pid=$!
 deadline=$((SECONDS + timeout_seconds))
 
-fatal_pattern='Mixin apply failed|MixinApplyError|InvalidMixinException|InjectionError|Exception in thread "main"|MOD LOADING ERROR|Failed to create mod instance'
+fatal_pattern='Mixin apply failed|MixinApplyError|InvalidMixinException|InjectionError|Exception in thread "main"|MOD LOADING ERROR|Failed to create mod instance|Duplicate UID|Error loading plugin at com\.betterbees\.compat\.jade|Caught unhandled exception'
 
 while (( SECONDS < deadline )); do
   if grep -Eiq "$fatal_pattern" "$log_file"; then

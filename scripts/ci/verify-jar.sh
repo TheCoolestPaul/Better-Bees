@@ -38,6 +38,9 @@ for expected in \
   'modId="betterbees"' \
   "version=\"${expected_version}\"" \
   'versionRange="[21.1.1,21.2)"' \
+  'modId="jade"' \
+  'type="optional"' \
+  'versionRange="[15.1.6,16)"' \
   'versionRange="[1.21.1,1.21.2)"' \
   'config="betterbees.mixins.json"'; do
   if ! grep -Fq "$expected" <<<"$metadata"; then
@@ -45,5 +48,10 @@ for expected in \
     exit 1
   fi
 done
+
+if grep -Eq '^snownee/jade/' <<<"$entries"; then
+  echo "Release jar must not bundle Jade classes" >&2
+  exit 1
+fi
 
 echo "Verified $jar_path for Better Bees $expected_version"

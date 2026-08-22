@@ -89,6 +89,14 @@ config="${mod_id}.mixins.json"
     ordering="NONE"
     side="BOTH"
 
+[[dependencies.${mod_id}]]
+    modId="jade"
+    type="optional"
+    reason="Displays Better Bees' exact hive honey and occupant capacities."
+    versionRange="${jade_version_range}"
+    ordering="AFTER"
+    side="BOTH"
+
 # Here's another dependency
 [[dependencies.${mod_id}]]
     modId="minecraft"

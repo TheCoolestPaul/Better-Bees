@@ -99,7 +99,7 @@ public final class FindFlowerTask extends Behavior<Bee> {
     }
 
     private void requestShared(ServerLevel level, Bee bee, BlockPos home) {
-        HiveFlowerIndex.Request request = HiveFlowerService.request(level, home, bee);
+        HiveFlowerIndex.Request request = HiveFlowerService.request(level, home, bee, handledGeneration);
         if (request.status() == HiveFlowerIndex.Status.FOUND) {
             candidate = request.flower();
         } else if (request.status() == HiveFlowerIndex.Status.COMPLETE_MISS
@@ -148,8 +148,9 @@ public final class FindFlowerTask extends Behavior<Bee> {
     }
 
     private static boolean validFlower(ServerLevel level, BlockPos position) {
-        return level.hasChunkAt(position) && level.getBlockState(position).is(BlockTags.FLOWERS)
-                && level.getBlockState(position).getFluidState().isEmpty();
+        if (!level.hasChunkAt(position)) return false;
+        net.minecraft.world.level.block.state.BlockState state = level.getBlockState(position);
+        return state.is(BlockTags.FLOWERS) && state.getFluidState().isEmpty();
     }
 
     private static boolean pathRandomlyTowards(Bee bee, BlockPos target) {

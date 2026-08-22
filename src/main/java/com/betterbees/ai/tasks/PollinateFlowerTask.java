@@ -13,6 +13,7 @@ import net.minecraft.util.valueproviders.UniformInt;
 import net.minecraft.world.entity.ai.behavior.Behavior;
 import net.minecraft.world.entity.ai.memory.MemoryStatus;
 import net.minecraft.world.entity.animal.Bee;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Map;
@@ -28,9 +29,7 @@ public final class PollinateFlowerTask extends Behavior<Bee> {
     private boolean valid(ServerLevel level, Bee bee) {
         return bee.getBrain().getMemory(ModMemoryTypes.FLOWER_POS.get())
                 .filter(pos -> pos.dimension() == level.dimension())
-                .filter(pos -> level.hasChunkAt(pos.pos()))
-                .filter(pos -> level.getBlockState(pos.pos()).is(BlockTags.FLOWERS)
-                        && level.getBlockState(pos.pos()).getFluidState().isEmpty()).isPresent()
+                .filter(pos -> validFlower(level, pos.pos())).isPresent()
                 && bee.getBrain().getMemory(ModMemoryTypes.POLLINATING_COOLDOWN.get()).isEmpty()
                 && !bee.getBrain().getMemory(ModMemoryTypes.WANTS_HIVE.get()).orElse(false)
                 && !level.isRaining() && !level.isNight();
@@ -64,9 +63,7 @@ public final class PollinateFlowerTask extends Behavior<Bee> {
         } else {
             bee.getBrain().setMemory(ModMemoryTypes.POLLINATING_COOLDOWN.get(),
                     UniformInt.of(120, 240).sample(level.random));
-            if (flower != null && (!level.hasChunkAt(flower.pos())
-                    || !level.getBlockState(flower.pos()).is(BlockTags.FLOWERS)
-                    || !level.getBlockState(flower.pos()).getFluidState().isEmpty()) && home != null) {
+            if (flower != null && !validFlower(level, flower.pos()) && home != null) {
                 HiveFlowerService.invalidate(level, home, flower.pos());
             }
         }
@@ -84,9 +81,7 @@ public final class PollinateFlowerTask extends Behavior<Bee> {
         int ticks = bee.getBrain().getMemory(ModMemoryTypes.POLLINATING_TICKS.get()).orElse(0) + 1;
         bee.getBrain().setMemory(ModMemoryTypes.POLLINATING_TICKS.get(), ticks);
         GlobalPos flower = bee.getBrain().getMemory(ModMemoryTypes.FLOWER_POS.get()).orElse(null);
-        if (flower == null || !level.hasChunkAt(flower.pos())
-                || !level.getBlockState(flower.pos()).is(BlockTags.FLOWERS)
-                || !level.getBlockState(flower.pos()).getFluidState().isEmpty()) {
+        if (flower == null || !validFlower(level, flower.pos())) {
             return;
         }
         Vec3 center = Vec3.atBottomCenterOf(flower.pos()).add(0.0D, 0.6D, 0.0D);
@@ -111,5 +106,11 @@ public final class PollinateFlowerTask extends Behavior<Bee> {
 
     private static double offset(Bee bee) {
         return (bee.getRandom().nextFloat() * 2.0F - 1.0F) / 3.0F;
+    }
+
+    private static boolean validFlower(ServerLevel level, BlockPos position) {
+        if (!level.hasChunkAt(position)) return false;
+        BlockState state = level.getBlockState(position);
+        return state.is(BlockTags.FLOWERS) && state.getFluidState().isEmpty();
     }
 }

@@ -39,6 +39,8 @@ than copying APIs from a newer Minecraft version. See `THIRD_PARTY_NOTICES.md`.
 - Vanilla campfire safety and unsmoked bee anger/release behavior are retained.
 - The vanilla 0-5 state is a proportional display proxy; comparators emit a
   proportional 0-15 fullness signal.
+- Optional Jade integration displays authoritative honey and occupant fractions
+  such as `Honey: 7/10` and `Bees: 12/20`.
 
 ## Server configuration
 
@@ -73,15 +75,22 @@ honey; new deposits pause until the hive is below the configured limit.
 
 Flower knowledge is deliberately not saved or copied to hive items. A request
 keeps the hive scanner active for 1,200 ticks, and later requests extend that
-window. The bounded cache remains available while the hive stays loaded, then
-is rebuilt lazily after unload or restart. This does not require migration in
-existing worlds.
+window. Scanning pauses as soon as all active requests are satisfied or a full
+generation completes. The bounded cache remains available while the hive stays
+loaded, then is rebuilt lazily after unload or restart. This does not require
+migration in existing worlds.
 
 ## Build and test
 
 ```powershell
 .\gradlew.bat build
 .\gradlew.bat runGameTestServer
+```
+
+To launch or run GameTests with the optional Jade integration enabled:
+
+```powershell
+.\gradlew.bat -PwithJade=true runGameTestServer
 ```
 
 The built mod is written to `build/libs/betterbees-<version>.jar`, using the
@@ -97,7 +106,8 @@ artifacts.
 ### Continuous integration and releases
 
 Pull requests and pushes to `main` build the mod and run all GameTests against
-the four explicitly tested NeoForge versions. Ordinary CI retains no jars.
+the four explicitly tested NeoForge versions. Endpoint jobs also exercise Jade
+15.1.6 and 15.10.6. Ordinary CI retains no jars.
 
 Releases are self-service from **Actions > Release > Run workflow**. Choose
 `current`, `patch`, `minor`, `major`, or `custom`; supply `custom_version` only
@@ -121,6 +131,13 @@ commit; the workflow never moves a tag. The old nonrelease tag
 `v0.1.0-NEO-1.21.1` is retained but does not participate in version selection.
 
 ## Compatibility
+
+Jade is optional and supported from version 15.1.6 through all compatible 15.x
+releases. Install Jade on both the client and server to see exact stored honey
+and bee-capacity fractions. A Jade-only client safely retains Jade's normal
+scaled `Honey: x/5` display when the server cannot provide authoritative Better
+Bees data. Jade is never bundled into or required by the Better Bees jar. Other
+inspection overlays, including The One Probe, are not currently integrated.
 
 Better Bees is intentionally incompatible with the `brainierbees` and
 `brainier_bees` mod IDs. It may also conflict with mods that replace Bee AI,

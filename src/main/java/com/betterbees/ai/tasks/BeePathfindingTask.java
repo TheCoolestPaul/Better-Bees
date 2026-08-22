@@ -34,18 +34,23 @@ public final class BeePathfindingTask extends Behavior<Bee> {
 
     @Override
     protected void start(ServerLevel level, Bee bee, long gameTime) {
-        selectOrReusePath(level, bee);
+        selectOrReusePath(level, bee, gameTime);
     }
 
     @Override
     protected void tick(ServerLevel level, Bee bee, long gameTime) {
-        selectOrReusePath(level, bee);
+        if (cached != null && cached.path != null && (gameTime - cached.createdAt > 50L
+                || gameTime - cached.createdAt > 5L && bee.getDeltaMovement().lengthSqr() <= 0.0025D
+                || bee.blockPosition().distManhattan(cached.path.getTarget()) <= 4)) {
+            selectOrReusePath(level, bee, gameTime);
+        }
         if (bee.hasNectar()) bee.getBrain().setMemory(ModMemoryTypes.POLLINATING_COOLDOWN.get(), 400);
     }
 
-    private void selectOrReusePath(ServerLevel level, Bee bee) {
-        if (cached != null && cached.path != null && cached.ticks++ <= 50
-                && !(bee.getDeltaMovement().length() <= 0.05D && cached.ticks > 5)
+    private void selectOrReusePath(ServerLevel level, Bee bee, long gameTime) {
+        if (cached != null && cached.path != null && !cached.path.isDone()
+                && gameTime - cached.createdAt <= 50L
+                && !(bee.getDeltaMovement().lengthSqr() <= 0.0025D && gameTime - cached.createdAt > 5L)
                 && bee.blockPosition().distManhattan(cached.path.getTarget()) > 4) {
             bee.getNavigation().moveTo(cached.path, 1.0D);
             return;
@@ -66,12 +71,15 @@ public final class BeePathfindingTask extends Behavior<Bee> {
         }
         Path path = bee.getNavigation().createPath(candidate.immutable(), 1);
         if (path != null) bee.getNavigation().moveTo(path, 1.0D);
-        cached = new CachedPath(path);
+        cached = new CachedPath(path, gameTime);
     }
 
     private static final class CachedPath {
         private final Path path;
-        private int ticks;
-        private CachedPath(Path path) { this.path = path; }
+        private final long createdAt;
+        private CachedPath(Path path, long createdAt) {
+            this.path = path;
+            this.createdAt = createdAt;
+        }
     }
 }

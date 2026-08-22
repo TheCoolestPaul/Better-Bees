@@ -75,10 +75,12 @@ public final class HiveHoneyService {
         if (level == null) return;
         BlockPos pos = hive.getBlockPos();
         BlockState state = level.getBlockState(pos);
-        if (!state.hasProperty(BeehiveBlock.HONEY_LEVEL)) return;
-        int display = displayLevel(get(hive));
-        if (state.getValue(BeehiveBlock.HONEY_LEVEL) != display) {
-            level.setBlockAndUpdate(pos, state.setValue(BeehiveBlock.HONEY_LEVEL, display));
+        if (state.hasProperty(BeehiveBlock.HONEY_LEVEL)) {
+            int display = displayLevel(get(hive));
+            if (state.getValue(BeehiveBlock.HONEY_LEVEL) != display) {
+                level.setBlockAndUpdate(pos, state.setValue(BeehiveBlock.HONEY_LEVEL, display));
+            }
         }
+        ((HiveHoneyStorage) hive).betterbees$markHoneyDisplaySynced();
     }
 }

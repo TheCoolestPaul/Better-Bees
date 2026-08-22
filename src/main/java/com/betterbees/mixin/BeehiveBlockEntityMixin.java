@@ -34,6 +34,7 @@ public abstract class BeehiveBlockEntityMixin extends BlockEntity implements Hiv
     @Unique private static final String BETTERBEES_HONEY_TAG = "BetterBeesHoney";
     @Unique private boolean betterbees$loadingOccupants;
     @Unique private int betterbees$honey = -1;
+    @Unique private boolean betterbees$honeyDisplayDirty = true;
     @Unique private final HiveFlowerIndex betterbees$flowerIndex = new HiveFlowerIndex();
 
     protected BeehiveBlockEntityMixin(BlockPos pos, BlockState state) {
@@ -60,7 +61,18 @@ public abstract class BeehiveBlockEntityMixin extends BlockEntity implements Hiv
     @Override
     public void betterbees$setHoney(int honey) {
         betterbees$honey = Math.max(0, honey);
+        betterbees$honeyDisplayDirty = true;
         ((BeehiveBlockEntity) (Object) this).setChanged();
+    }
+
+    @Override
+    public boolean betterbees$isHoneyDisplayDirty() {
+        return betterbees$honeyDisplayDirty;
+    }
+
+    @Override
+    public void betterbees$markHoneyDisplaySynced() {
+        betterbees$honeyDisplayDirty = false;
     }
 
     @Inject(method = "isFull", at = @At("HEAD"), cancellable = true)
@@ -99,6 +111,7 @@ public abstract class BeehiveBlockEntityMixin extends BlockEntity implements Hiv
                 ? Math.max(0, tag.getInt(BETTERBEES_HONEY_TAG))
                 : (hive.getBlockState().hasProperty(BeehiveBlock.HONEY_LEVEL)
                     ? hive.getBlockState().getValue(BeehiveBlock.HONEY_LEVEL) : 0);
+        betterbees$honeyDisplayDirty = true;
     }
 
     @Inject(method = "saveAdditional", at = @At("TAIL"))
@@ -115,7 +128,10 @@ public abstract class BeehiveBlockEntityMixin extends BlockEntity implements Hiv
     private void betterbees$finishComponentLoad(BlockEntity.DataComponentInput componentInput, CallbackInfo ci) {
         betterbees$loadingOccupants = false;
         Integer honey = componentInput.get(ModDataComponents.HONEY.get());
-        if (honey != null) betterbees$honey = Math.max(0, honey);
+        if (honey != null) {
+            betterbees$honey = Math.max(0, honey);
+            betterbees$honeyDisplayDirty = true;
+        }
     }
 
     @Inject(method = "collectImplicitComponents", at = @At("TAIL"))
@@ -135,6 +151,8 @@ public abstract class BeehiveBlockEntityMixin extends BlockEntity implements Hiv
             HiveBreedingService.tick(serverLevel, pos, hive);
             HiveFlowerService.tick(serverLevel, pos, hive);
         }
-        HiveHoneyService.syncDisplay(hive);
+        if (((HiveHoneyStorage) hive).betterbees$isHoneyDisplayDirty()) {
+            HiveHoneyService.syncDisplay(hive);
+        }
     }
 }
