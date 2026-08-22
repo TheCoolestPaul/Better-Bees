@@ -17,7 +17,11 @@ case "$mode" in
     ;;
   client)
     gradle_task="runClient"
-    markers=('Sound engine started' 'textures/atlas/blocks.png-atlas')
+    markers=(
+      'Reloading ResourceManager:.*mod/betterbees'
+      'textures/atlas/blocks.png-atlas'
+      'textures/atlas/gui.png-atlas'
+    )
     ;;
   *)
     echo "Unknown smoke mode: $mode" >&2
@@ -36,7 +40,9 @@ fi
 
 command=(./gradlew --no-daemon "-Pneo_version=${neo_version}" "$gradle_task")
 if [[ "$mode" == "client" ]]; then
-  command=(xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 MESA_LOADER_DRIVER_OVERRIDE=llvmpipe "${command[@]}")
+  # Hosted runners have no physical audio device. OpenAL's null backend keeps
+  # that environmental limitation separate from client/mod initialization.
+  command=(xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 MESA_LOADER_DRIVER_OVERRIDE=llvmpipe ALSOFT_DRIVERS=null "${command[@]}")
 fi
 
 smoke_pid=''
