@@ -1,0 +1,175 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate_version:
+    name: Validate version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mod_version: ${{ steps.version.outputs.mod_version }}
+      jar_name: ${{ steps.version.outputs.jar_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate tag and project version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          mod_version="$(sed -n 's/^mod_version=//p' gradle.properties)"
+          if [[ -z "$mod_version" ]]; then
+            echo "Unable to read mod_version from gradle.properties" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v${mod_version}" ]]; then
+            echo "Tag $GITHUB_REF_NAME must match project version v${mod_version}" >&2
+            exit 1
+          fi
+          echo "mod_version=$mod_version" >> "$GITHUB_OUTPUT"
+          echo "jar_name=betterbees-${mod_version}.jar" >> "$GITHUB_OUTPUT"
+
+  compatibility:
+    name: GameTests / NeoForge ${{ matrix.neo_version }}
+    needs: validate_version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        neo_version: ['21.1.1', '21.1.50', '21.1.213', '21.1.248']
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and run GameTests
+        run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo_version }} build runGameTestServer
+
+  smoke:
+    name: ${{ matrix.mode }} smoke / NeoForge ${{ matrix.neo_version }}
+    needs: validate_version
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [server, client]
+        neo_version: ['21.1.1', '21.1.248']
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install headless client dependencies
+        if: matrix.mode == 'client'
+        run: sudo apt-get update && sudo apt-get install --yes xvfb libgl1-mesa-dri
+
+      - name: Smoke-launch ${{ matrix.mode }}
+        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.neo_version }}
+
+  package:
+    name: Package release candidate
+    needs: [validate_version, compatibility, smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build against the minimum NeoForge version
+        run: ./gradlew --no-daemon -Pneo_version=21.1.1 clean build
+
+      - name: Verify release jar
+        run: bash scripts/ci/verify-jar.sh "build/libs/${{ needs.validate_version.outputs.jar_name }}"
+
+      - name: Generate SHA-256 checksum
+        working-directory: build/libs
+        run: sha256sum "${{ needs.validate_version.outputs.jar_name }}" > "${{ needs.validate_version.outputs.jar_name }}.sha256"
+
+      - name: Upload validated package
+        uses: actions/upload-artifact@v4
+        with:
+          name: betterbees-${{ needs.validate_version.outputs.mod_version }}-validated
+          path: |
+            build/libs/${{ needs.validate_version.outputs.jar_name }}
+            build/libs/${{ needs.validate_version.outputs.jar_name }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+
+  publish:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag'
+    needs: [validate_version, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated package
+        uses: actions/download-artifact@v4
+        with:
+          name: betterbees-${{ needs.validate_version.outputs.mod_version }}-validated
+          path: release-assets
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.validate_version.outputs.mod_version }}
+          JAR_NAME: ${{ needs.validate_version.outputs.jar_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "release-assets/$JAR_NAME" \
+              "release-assets/$JAR_NAME.sha256" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              "release-assets/$JAR_NAME" \
+              "release-assets/$JAR_NAME.sha256" \
+              --verify-tag \
+              --generate-notes \
+              --title "Better Bees $VERSION"
+          fi
