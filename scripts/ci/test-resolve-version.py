@@ -14,6 +14,7 @@ sys.modules[SPEC.name] = resolve_version
 SPEC.loader.exec_module(resolve_version)
 Version = resolve_version.Version
 resolve = resolve_version.resolve
+modrinth_version_type = resolve_version.modrinth_version_type
 
 
 class VersionTests(unittest.TestCase):
@@ -31,6 +32,8 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(str(target), "1.1.0-beta.1")
         self.assertTrue(target.prerelease)
         self.assertLess(Version.parse("1.1.0-beta.1").compare(Version.parse("1.1.0")), 0)
+        self.assertEqual(modrinth_version_type(target), "beta")
+        self.assertEqual(modrinth_version_type(Version.parse("1.1.0")), "release")
 
     def test_invalid_versions(self):
         for value in ("v1.1.0", "1.1", "01.1.0", "1.1.0+build", "1.1.0-01"):

@@ -124,10 +124,30 @@ publish the GitHub Release. Prerelease suffixes automatically create GitHub
 prereleases. A changed `main`, invalid/backward version, failed test, or jar
 verification failure leaves the repository unpublished.
 
+The same validated jar is also published to Modrinth for NeoForge 1.21.1. Its
+Modrinth version lists Jade as an optional project dependency; the jar metadata
+continues to enforce the supported Jade range `[15.1.6,16)` without pinning
+players to one specific Jade file. Stable Better Bees versions become Modrinth
+releases, while SemVer suffix versions become betas.
+
+Publication targets the Better Bees Modrinth project `zMjnE1QT`. Before the
+first publication, configure this GitHub repository setting under **Settings >
+Secrets and variables > Actions**:
+
+- Secret `MODRINTH_TOKEN`: a Modrinth personal access token allowed to upload
+  versions to the project.
+
+The `betterbees` Modrinth slug is already owned by an unrelated project, so do
+not replace the configured ID with that project's ID. The workflow validates
+the target project, Jade compatibility, dependency relationship, filename,
+version type, and SHA-512 hash before and after upload. Matching existing
+versions are reused safely; conflicting uploads fail instead of being
+overwritten.
+
 The validated `betterbees-<version>.jar` and checksum are retained as Actions
-artifacts for 14 days and attached to the release. Safe retries may replace
-assets only when an existing `v<version>` tag still points to the exact tested
-commit; the workflow never moves a tag. The old nonrelease tag
+artifacts for 14 days and attached to the GitHub release. Safe retries may
+replace GitHub assets only when an existing `v<version>` tag still points to
+the exact tested commit; the workflow never moves a tag. The old nonrelease tag
 `v0.1.0-NEO-1.21.1` is retained but does not participate in version selection.
 
 ## Compatibility

@@ -34,6 +34,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       jar_name: ${{ steps.version.outputs.jar_name }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      modrinth_version_type: ${{ steps.version.outputs.modrinth_version_type }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v7
@@ -98,6 +99,19 @@ jobs:
 
       - name: Test version resolver
         run: python3 scripts/ci/test-resolve-version.py
+
+      - name: Test and validate Modrinth metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          jade_range="$(sed -n 's/^jade_version_range=//p' gradle.properties | tail -n 1 | tr -d '\r')"
+          python3 scripts/ci/test-validate-modrinth-release.py
+          python3 scripts/ci/validate-modrinth-release.py \
+            --manifest .github/modrinth-dependencies.json \
+            --jade-version-range "$jade_range" \
+            --expected-version '${{ steps.version.outputs.release_version }}' \
+            --game-version 1.21.1 \
+            --version-type '${{ steps.version.outputs.modrinth_version_type }}'
 
   compatibility:
     name: GameTests / NeoForge ${{ matrix.neo_version }}
@@ -307,6 +321,28 @@ jobs:
             echo "main changed from tested commit $SOURCE_SHA to $remote_main; start a fresh release run" >&2
             exit 1
           fi
+      - name: Validate Modrinth project and release candidate
+        id: modrinth
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          MODRINTH_PROJECT_ID: zMjnE1QT
+          VERSION: ${{ needs.resolve_version.outputs.release_version }}
+          VERSION_TYPE: ${{ needs.resolve_version.outputs.modrinth_version_type }}
+          JAR_NAME: ${{ needs.resolve_version.outputs.jar_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jade_range="$(sed -n 's/^jade_version_range=//p' gradle.properties | tail -n 1 | tr -d '\r')"
+          python3 scripts/ci/validate-modrinth-release.py \
+            --manifest .github/modrinth-dependencies.json \
+            --jade-version-range "$jade_range" \
+            --expected-version "$VERSION" \
+            --target-project "$MODRINTH_PROJECT_ID" \
+            --game-version 1.21.1 \
+            --version-type "$VERSION_TYPE" \
+            --artifact "release-assets/$JAR_NAME" \
+            --display-name "Better Bees $VERSION" \
+            --online
       - name: Commit version and create tag
         id: git_release
         env:
@@ -387,6 +423,51 @@ jobs:
               --title "Better Bees $VERSION" \
               "${prerelease[@]}"
           fi
+          gh release view "$TAG" --json body --jq '.body' > release-assets/release-notes.md
+          if [[ ! -s release-assets/release-notes.md ]]; then
+            printf 'Better Bees %s for NeoForge 1.21.1.\n' "$VERSION" > release-assets/release-notes.md
+          fi
+      - name: Publish Modrinth release
+        if: steps.modrinth.outputs.publish == 'true'
+        uses: Kira-NT/mc-publish@52307b03863581dec6b652b83e597aec02ebb075 # v3.3.1
+        with:
+          modrinth-id: zMjnE1QT
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          modrinth-files: release-assets/${{ needs.resolve_version.outputs.jar_name }}
+          modrinth-name: Better Bees ${{ needs.resolve_version.outputs.release_version }}
+          modrinth-version: ${{ needs.resolve_version.outputs.release_version }}
+          modrinth-version-type: ${{ needs.resolve_version.outputs.modrinth_version_type }}
+          modrinth-changelog-file: release-assets/release-notes.md
+          modrinth-loaders: neoforge
+          modrinth-game-versions: 1.21.1
+          modrinth-game-version-filter: none
+          modrinth-dependencies: ${{ steps.modrinth.outputs.dependencies }}
+          modrinth-java: 21
+          modrinth-retry-attempts: 3
+          modrinth-retry-delay: 10000
+          modrinth-fail-mode: fail
+      - name: Verify Modrinth publication
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          MODRINTH_PROJECT_ID: zMjnE1QT
+          VERSION: ${{ needs.resolve_version.outputs.release_version }}
+          VERSION_TYPE: ${{ needs.resolve_version.outputs.modrinth_version_type }}
+          JAR_NAME: ${{ needs.resolve_version.outputs.jar_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jade_range="$(sed -n 's/^jade_version_range=//p' gradle.properties | tail -n 1 | tr -d '\r')"
+          python3 scripts/ci/validate-modrinth-release.py \
+            --manifest .github/modrinth-dependencies.json \
+            --jade-version-range "$jade_range" \
+            --expected-version "$VERSION" \
+            --target-project "$MODRINTH_PROJECT_ID" \
+            --game-version 1.21.1 \
+            --version-type "$VERSION_TYPE" \
+            --artifact "release-assets/$JAR_NAME" \
+            --display-name "Better Bees $VERSION" \
+            --online \
+            --expect-existing
       - name: Publish completion summary
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
@@ -395,4 +476,5 @@ jobs:
           Tag: `${{ needs.resolve_version.outputs.tag }}`
           Commit: `${{ steps.git_release.outputs.commit_sha }}`
           Prerelease: `${{ needs.resolve_version.outputs.is_prerelease }}`
+          GitHub and Modrinth publication verified.
           SUMMARY

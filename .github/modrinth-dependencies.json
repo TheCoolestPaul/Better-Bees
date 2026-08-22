@@ -1,0 +1,10 @@
+{
+  "dependencies": [
+    {
+      "name": "Jade",
+      "project_id": "nvQzSEkH",
+      "dependency_type": "optional",
+      "version_range": "[15.1.6,16)"
+    }
+  ]
+}

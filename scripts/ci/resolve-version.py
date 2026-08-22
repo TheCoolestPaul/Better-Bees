@@ -109,6 +109,10 @@ def write_outputs(path: Path, values: dict[str, str]) -> None:
             output.write(f"{key}={value}\n")
 
 
+def modrinth_version_type(version: Version) -> str:
+    return "beta" if version.prerelease else "release"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--properties", type=Path, default=Path("gradle.properties"))
@@ -135,6 +139,7 @@ def main() -> int:
         "tag": f"v{version}",
         "jar_name": f"betterbees-{version}.jar",
         "is_prerelease": str(bool(target.prerelease)).lower(),
+        "modrinth_version_type": modrinth_version_type(target),
     }
     output_path = args.github_output
     if output_path is None and os.environ.get("GITHUB_OUTPUT"):

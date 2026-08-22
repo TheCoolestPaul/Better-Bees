@@ -24,6 +24,23 @@ jobs:
         uses: actions/checkout@v7
       - name: Test version resolver
         run: python3 scripts/ci/test-resolve-version.py
+      - name: Test and validate Modrinth metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          jade_range="$(sed -n 's/^jade_version_range=//p' gradle.properties | tail -n 1 | tr -d '\r')"
+          mod_version="$(sed -n 's/^mod_version=//p' gradle.properties | tail -n 1 | tr -d '\r')"
+          version_type=release
+          if [[ "$mod_version" == *-* ]]; then
+            version_type=beta
+          fi
+          python3 scripts/ci/test-validate-modrinth-release.py
+          python3 scripts/ci/validate-modrinth-release.py \
+            --manifest .github/modrinth-dependencies.json \
+            --jade-version-range "$jade_range" \
+            --expected-version "$mod_version" \
+            --game-version 1.21.1 \
+            --version-type "$version_type"
       - name: Check release shell scripts
         run: bash -n scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh
 
