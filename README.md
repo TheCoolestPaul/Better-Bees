@@ -84,7 +84,8 @@ existing worlds.
 .\gradlew.bat runGameTestServer
 ```
 
-The built mod is written to `build/libs/betterbees-1.0.0.jar`.
+The built mod is written to `build/libs/betterbees-<version>.jar`, using the
+`mod_version` value in `gradle.properties`.
 
 Better Bees ships one jar for Minecraft 1.21.1. Releases are compiled against
 NeoForge 21.1.1 so newer-only API usage cannot enter the artifact accidentally.
@@ -98,15 +99,26 @@ artifacts.
 Pull requests and pushes to `main` build the mod and run all GameTests against
 the four explicitly tested NeoForge versions. Ordinary CI retains no jars.
 
-The Release workflow can be run manually to perform the full compatibility
-matrix, smoke-launch dedicated servers and headless clients on NeoForge 21.1.1
-and 21.1.248, verify the floor-built jar, and retain that candidate for 14 days.
-A manual run never publishes a GitHub Release.
+Releases are self-service from **Actions > Release > Run workflow**. Choose
+`current`, `patch`, `minor`, `major`, or `custom`; supply `custom_version` only
+for a custom strict SemVer such as `1.1.0-beta.1`. GitHub cannot show values
+read from the repository before the form is submitted. The first job and the
+run summary report the current project version, last published release,
+calculated release version, and `v<version>` tag before expensive validation.
 
-To publish version 1.0.0 after manual validation, create and push the matching
-`v1.0.0` tag. Tag releases repeat every validation step, require the tag to
-match `mod_version`, and attach the verified jar and its SHA-256 checksum to the
-GitHub Release. Re-running the tag workflow replaces the existing assets.
+The workflow applies the calculated version to the full four-version GameTest
+matrix, smoke-launches dedicated servers and headless clients at both supported
+endpoints, then verifies a fresh NeoForge 21.1.1 build and checksum. Only after
+all checks pass does it update `mod_version` (when needed), commit, tag, and
+publish the GitHub Release. Prerelease suffixes automatically create GitHub
+prereleases. A changed `main`, invalid/backward version, failed test, or jar
+verification failure leaves the repository unpublished.
+
+The validated `betterbees-<version>.jar` and checksum are retained as Actions
+artifacts for 14 days and attached to the release. Safe retries may replace
+assets only when an existing `v<version>` tag still points to the exact tested
+commit; the workflow never moves a tag. The old nonrelease tag
+`v0.1.0-NEO-1.21.1` is retained but does not participate in version selection.
 
 ## Compatibility
 

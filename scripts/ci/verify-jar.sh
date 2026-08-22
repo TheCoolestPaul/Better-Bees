@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <Better Bees jar>" >&2
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "Usage: $0 <Better Bees jar> [expected version]" >&2
   exit 2
 fi
 
 jar_path="$1"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-expected_version="$(sed -n 's/^mod_version=//p' "$repo_root/gradle.properties")"
+expected_version="${2:-$(sed -n 's/^mod_version=//p' "$repo_root/gradle.properties")}"
 expected_name="betterbees-${expected_version}.jar"
 
 if [[ ! -f "$jar_path" ]]; then

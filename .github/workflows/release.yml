@@ -2,48 +2,106 @@ name: Release
 
 on:
   workflow_dispatch:
-  push:
-    tags: ['v*']
+    inputs:
+      release_mode:
+        description: Version to release
+        required: true
+        default: current
+        type: choice
+        options: [current, patch, minor, major, custom]
+      custom_version:
+        description: Strict SemVer used only when Version to release is custom
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
-  validate_version:
-    name: Validate version
+  resolve_version:
+    name: Resolve release version
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      mod_version: ${{ steps.version.outputs.mod_version }}
+      source_sha: ${{ steps.source.outputs.sha }}
+      current_version: ${{ steps.version.outputs.current_version }}
+      last_release: ${{ steps.version.outputs.last_release }}
+      release_version: ${{ steps.version.outputs.release_version }}
+      tag: ${{ steps.version.outputs.tag }}
       jar_name: ${{ steps.version.outputs.jar_name }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
     steps:
-      - name: Checkout repository
+      - name: Checkout main
         uses: actions/checkout@v7
+        with:
+          ref: main
 
-      - name: Validate tag and project version
-        id: version
+      - name: Record tested source
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Find last published release
+        id: history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          mod_version="$(sed -n 's/^mod_version=//p' gradle.properties)"
-          if [[ -z "$mod_version" ]]; then
-            echo "Unable to read mod_version from gradle.properties" >&2
+          releases="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq '.[] | select(.draft == false) | [.published_at, .tag_name] | @tsv')"
+          latest="$(printf '%s\n' "$releases" | sort --reverse | sed -n '1p')"
+          tag="${latest#*$'\t'}"
+          if [[ -z "$tag" ]]; then
+            echo "version=none" >> "$GITHUB_OUTPUT"
+          elif [[ "$tag" =~ ^v(.+)$ ]]; then
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Latest published release tag must start with v: $tag" >&2
             exit 1
           fi
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v${mod_version}" ]]; then
-            echo "Tag $GITHUB_REF_NAME must match project version v${mod_version}" >&2
-            exit 1
-          fi
-          echo "mod_version=$mod_version" >> "$GITHUB_OUTPUT"
-          echo "jar_name=betterbees-${mod_version}.jar" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve requested version
+        id: version
+        env:
+          RELEASE_MODE: ${{ inputs.release_mode }}
+          CUSTOM_VERSION: ${{ inputs.custom_version }}
+          LAST_RELEASE: ${{ steps.history.outputs.version }}
+        shell: bash
+        run: |
+          python3 scripts/ci/resolve-version.py \
+            --mode "$RELEASE_MODE" \
+            --custom-version "$CUSTOM_VERSION" \
+            --last-release "$LAST_RELEASE" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Publish version summary
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          # Better Bees release
+
+          ```text
+          Current project version: ${{ steps.version.outputs.current_version }}
+          Last published release: ${{ steps.version.outputs.last_release }}
+          Requested mode: ${{ inputs.release_mode }}
+          Release version: ${{ steps.version.outputs.release_version }}
+          Tag: ${{ steps.version.outputs.tag }}
+          ```
+
+          Validation must complete before the repository, tag, or release is changed.
+          SUMMARY
+
+      - name: Test version resolver
+        run: python3 scripts/ci/test-resolve-version.py
 
   compatibility:
     name: GameTests / NeoForge ${{ matrix.neo_version }}
-    needs: validate_version
+    needs: resolve_version
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -51,24 +109,27 @@ jobs:
       matrix:
         neo_version: ['21.1.1', '21.1.50', '21.1.213', '21.1.248']
     steps:
-      - name: Checkout repository
+      - name: Checkout tested source
         uses: actions/checkout@v7
-
+        with:
+          ref: ${{ needs.resolve_version.outputs.source_sha }}
+      - name: Apply release version
+        env:
+          VERSION: ${{ needs.resolve_version.outputs.release_version }}
+        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: temurin
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
-
       - name: Build and run GameTests
         run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo_version }} build runGameTestServer
 
   smoke:
     name: ${{ matrix.mode }} smoke / NeoForge ${{ matrix.neo_version }}
-    needs: validate_version
+    needs: resolve_version
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -77,86 +138,160 @@ jobs:
         mode: [server, client]
         neo_version: ['21.1.1', '21.1.248']
     steps:
-      - name: Checkout repository
+      - name: Checkout tested source
         uses: actions/checkout@v7
-
+        with:
+          ref: ${{ needs.resolve_version.outputs.source_sha }}
+      - name: Apply release version
+        env:
+          VERSION: ${{ needs.resolve_version.outputs.release_version }}
+        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: temurin
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
-
       - name: Install headless client dependencies
         if: matrix.mode == 'client'
         run: sudo apt-get update && sudo apt-get install --yes xvfb libgl1-mesa-dri
-
       - name: Smoke-launch ${{ matrix.mode }}
         run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.neo_version }}
 
   package:
     name: Package release candidate
-    needs: [validate_version, compatibility, smoke]
+    needs: [resolve_version, compatibility, smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout repository
+      - name: Checkout tested source
         uses: actions/checkout@v7
-
+        with:
+          ref: ${{ needs.resolve_version.outputs.source_sha }}
+      - name: Apply release version
+        env:
+          VERSION: ${{ needs.resolve_version.outputs.release_version }}
+        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: temurin
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
-
       - name: Build against the minimum NeoForge version
         run: ./gradlew --no-daemon -Pneo_version=21.1.1 clean build
-
       - name: Verify release jar
-        run: bash scripts/ci/verify-jar.sh "build/libs/${{ needs.validate_version.outputs.jar_name }}"
-
-      - name: Generate SHA-256 checksum
+        run: bash scripts/ci/verify-jar.sh "build/libs/${{ needs.resolve_version.outputs.jar_name }}" '${{ needs.resolve_version.outputs.release_version }}'
+      - name: Generate and verify SHA-256 checksum
         working-directory: build/libs
-        run: sha256sum "${{ needs.validate_version.outputs.jar_name }}" > "${{ needs.validate_version.outputs.jar_name }}.sha256"
-
+        run: |
+          sha256sum "${{ needs.resolve_version.outputs.jar_name }}" > "${{ needs.resolve_version.outputs.jar_name }}.sha256"
+          sha256sum --check "${{ needs.resolve_version.outputs.jar_name }}.sha256"
       - name: Upload validated package
         uses: actions/upload-artifact@v7
         with:
-          name: betterbees-${{ needs.validate_version.outputs.mod_version }}-validated
+          name: betterbees-${{ needs.resolve_version.outputs.release_version }}-validated
           path: |
-            build/libs/${{ needs.validate_version.outputs.jar_name }}
-            build/libs/${{ needs.validate_version.outputs.jar_name }}.sha256
+            build/libs/${{ needs.resolve_version.outputs.jar_name }}
+            build/libs/${{ needs.resolve_version.outputs.jar_name }}.sha256
           if-no-files-found: error
           retention-days: 14
           overwrite: true
 
   publish:
-    name: Publish GitHub Release
-    if: github.ref_type == 'tag'
-    needs: [validate_version, package]
+    name: Commit, tag, and publish
+    needs: [resolve_version, package]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      - name: Checkout tested source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve_version.outputs.source_sha }}
+          fetch-depth: 0
       - name: Download validated package
         uses: actions/download-artifact@v8
         with:
-          name: betterbees-${{ needs.validate_version.outputs.mod_version }}-validated
+          name: betterbees-${{ needs.resolve_version.outputs.release_version }}-validated
           path: release-assets
+      - name: Verify downloaded checksum
+        working-directory: release-assets
+        run: sha256sum --check '${{ needs.resolve_version.outputs.jar_name }}.sha256'
+      - name: Verify main is still the tested commit
+        env:
+          SOURCE_SHA: ${{ needs.resolve_version.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [[ "$remote_main" != "$SOURCE_SHA" ]]; then
+            echo "main changed from tested commit $SOURCE_SHA to $remote_main; start a fresh release run" >&2
+            exit 1
+          fi
+      - name: Commit version and create tag
+        id: git_release
+        env:
+          VERSION: ${{ needs.resolve_version.outputs.release_version }}
+          CURRENT_VERSION: ${{ needs.resolve_version.outputs.current_version }}
+          TAG: ${{ needs.resolve_version.outputs.tag }}
+          SOURCE_SHA: ${{ needs.resolve_version.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          remote_tag="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
+          if [[ -z "$remote_tag" ]]; then
+            remote_tag="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
+          fi
+          if [[ -n "$remote_tag" ]]; then
+            if [[ "$remote_tag" != "$SOURCE_SHA" ]]; then
+              echo "Existing tag $TAG points to $remote_tag, not tested commit $SOURCE_SHA; refusing to move it" >&2
+              exit 1
+            fi
+            echo "Existing tag $TAG already identifies the tested commit; publication recovery is safe."
+            echo "commit_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$VERSION" != "$CURRENT_VERSION" ]]; then
+            sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
+            git add gradle.properties
+            git commit -m "Release $VERSION"
+          fi
+          release_commit="$(git rev-parse HEAD)"
+          git tag --annotate "$TAG" --message "Better Bees $VERSION"
+          git push --atomic origin "HEAD:refs/heads/main" "refs/tags/$TAG"
+          echo "commit_sha=$release_commit" >> "$GITHUB_OUTPUT"
+      - name: Verify published repository state
+        env:
+          TAG: ${{ needs.resolve_version.outputs.tag }}
+          EXPECTED_SHA: ${{ steps.git_release.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          remote_tag="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
+          if [[ -z "$remote_tag" ]]; then
+            remote_tag="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
+          fi
+          if [[ "$remote_main" != "$EXPECTED_SHA" || "$remote_tag" != "$EXPECTED_SHA" ]]; then
+            echo "Expected main and $TAG to identify $EXPECTED_SHA; got main=$remote_main tag=$remote_tag" >&2
+            exit 1
+          fi
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-          VERSION: ${{ needs.validate_version.outputs.mod_version }}
-          JAR_NAME: ${{ needs.validate_version.outputs.jar_name }}
+          TAG: ${{ needs.resolve_version.outputs.tag }}
+          VERSION: ${{ needs.resolve_version.outputs.release_version }}
+          JAR_NAME: ${{ needs.resolve_version.outputs.jar_name }}
+          IS_PRERELEASE: ${{ needs.resolve_version.outputs.is_prerelease }}
         shell: bash
         run: |
           set -euo pipefail
@@ -166,10 +301,23 @@ jobs:
               "release-assets/$JAR_NAME.sha256" \
               --clobber
           else
+            prerelease=()
+            if [[ "$IS_PRERELEASE" == "true" ]]; then
+              prerelease+=(--prerelease)
+            fi
             gh release create "$TAG" \
               "release-assets/$JAR_NAME" \
               "release-assets/$JAR_NAME.sha256" \
-              --verify-tag \
-              --generate-notes \
-              --title "Better Bees $VERSION"
+              --verify-tag --generate-notes \
+              --title "Better Bees $VERSION" \
+              "${prerelease[@]}"
           fi
+      - name: Publish completion summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Published Better Bees ${{ needs.resolve_version.outputs.release_version }}
+
+          Tag: `${{ needs.resolve_version.outputs.tag }}`
+          Commit: `${{ steps.git_release.outputs.commit_sha }}`
+          Prerelease: `${{ needs.resolve_version.outputs.is_prerelease }}`
+          SUMMARY

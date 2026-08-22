@@ -15,6 +15,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release_tooling:
+    name: Release tooling
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Test version resolver
+        run: python3 scripts/ci/test-resolve-version.py
+      - name: Check release shell scripts
+        run: bash -n scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh
+
   compatibility:
     name: NeoForge ${{ matrix.neo_version }}
     runs-on: ubuntu-latest
