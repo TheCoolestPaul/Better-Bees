@@ -25,16 +25,16 @@ jobs:
         neo_version: ['21.1.1', '21.1.50', '21.1.213', '21.1.248']
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: temurin
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Build and run GameTests
         run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo_version }} build runGameTestServer
