@@ -19,6 +19,8 @@ public final class BetterBeesConfig {
     private static final ModConfigSpec.BooleanValue INDOOR_BREEDING_ENABLED;
     private static final ModConfigSpec.IntValue BREEDING_INTERVAL_TICKS;
     private static final ModConfigSpec.DoubleValue BREEDING_CHANCE;
+    private static final ModConfigSpec.DoubleValue MINIMUM_BEE_SCALE;
+    private static final ModConfigSpec.DoubleValue MAXIMUM_BEE_SCALE;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -85,6 +87,17 @@ public final class BetterBeesConfig {
                 .defineInRange("breeding_chance", 0.05D, 0.0D, 1.0D);
         builder.pop();
 
+        builder.push("appearance");
+        MINIMUM_BEE_SCALE = builder
+                .comment("Smallest physical scale assigned to an individual bee. Set both scale values to 1.0 for vanilla size.")
+                .worldRestart()
+                .defineInRange("minimum_bee_scale", 0.20D, 0.0625D, 1.0D);
+        MAXIMUM_BEE_SCALE = builder
+                .comment("Largest physical scale assigned to an individual bee. Inverted bounds are sorted at runtime.")
+                .worldRestart()
+                .defineInRange("maximum_bee_scale", 0.35D, 0.0625D, 1.0D);
+        builder.pop();
+
         SPEC = builder.build();
     }
 
@@ -107,4 +120,8 @@ public final class BetterBeesConfig {
     public static boolean indoorBreedingEnabled() { return INDOOR_BREEDING_ENABLED.getAsBoolean(); }
     public static int breedingIntervalTicks() { return BREEDING_INTERVAL_TICKS.getAsInt(); }
     public static double breedingChance() { return BREEDING_CHANCE.getAsDouble(); }
+    public static double configuredMinimumBeeScale() { return MINIMUM_BEE_SCALE.getAsDouble(); }
+    public static double configuredMaximumBeeScale() { return MAXIMUM_BEE_SCALE.getAsDouble(); }
+    public static double minimumBeeScale() { return Math.min(configuredMinimumBeeScale(), configuredMaximumBeeScale()); }
+    public static double maximumBeeScale() { return Math.max(configuredMinimumBeeScale(), configuredMaximumBeeScale()); }
 }

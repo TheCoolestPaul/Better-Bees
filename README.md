@@ -41,6 +41,8 @@ than copying APIs from a newer Minecraft version. See `THIRD_PARTY_NOTICES.md`.
   proportional 0-15 fullness signal.
 - Optional Jade integration displays authoritative honey and occupant fractions
   such as `Honey: 7/10` and `Bees: 12/20`.
+- Every bee has a stable UUID-derived physical scale between 20% and 35% by
+  default, including matching model, shadow, eye height, and hitbox dimensions.
 
 ## Server configuration
 
@@ -63,6 +65,8 @@ Settings require a restart.
 | `hive.indoor_breeding_enabled` | true | boolean |
 | `hive.breeding_interval_ticks` | 1200 | 20-72000 |
 | `hive.breeding_chance` | 0.05 | 0.0-1.0 |
+| `appearance.minimum_bee_scale` | 0.20 | 0.0625-1.0 |
+| `appearance.maximum_bee_scale` | 0.35 | 0.0625-1.0 |
 
 Indoor breeding needs two serialized adult bees with no age cooldown and one
 free slot. A successful roll adds one vanilla-aged baby, consumes no honey,
@@ -79,6 +83,14 @@ window. Scanning pauses as soon as all active requests are satisfied or a full
 generation completes. The bounded cache remains available while the hive stays
 loaded, then is rebuilt lazily after unload or restart. This does not require
 migration in existing worlds.
+
+Bee size is derived deterministically from each bee's UUID and does not consume
+the world's random stream. Existing bees gain stable individual sizes without
+save migration or custom scale data in entity and hive NBT. The server applies
+the size through Minecraft's synchronized scale attribute, so clients receive
+the authoritative model and hitbox scale automatically. Babies retain vanilla's
+additional half-size multiplier. Set both appearance values to `1.0` to restore
+vanilla size; inverted bounds are sorted and reported once at startup.
 
 ## Build and test
 
@@ -160,10 +172,13 @@ Bees data. Jade is never bundled into or required by the Better Bees jar. Other
 inspection overlays, including The One Probe, are not currently integrated.
 
 Better Bees is intentionally incompatible with the `brainierbees` and
-`brainier_bees` mod IDs. It may also conflict with mods that replace Bee AI,
-change `BeehiveBlockEntity` capacity/storage, or inject into the same Bee and
-beehive methods. Mods that replace beehive harvesting, honey-level handling,
-or dispenser shearing may also conflict.
+`brainier_bees` mod IDs. It is also incompatible with Realistic Bees because
+both mods change bee scale and beehive behavior. The individual-size feature
+is inspired by Realistic Bees but uses Minecraft's native synchronized scale
+attribute and does not copy its implementation. Better Bees may also conflict
+with mods that replace Bee AI, change `BeehiveBlockEntity` capacity/storage, or
+inject into the same Bee and beehive methods. Mods that replace beehive
+harvesting, honey-level handling, or dispenser shearing may also conflict.
 Mods that replace flower-search, hive-selection, or hive-travel AI may conflict
 with the collective-foraging behavior as well.
 

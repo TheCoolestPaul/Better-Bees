@@ -11,6 +11,7 @@ import com.betterbees.hive.HiveFlowerKnowledge;
 import com.betterbees.mixin.BeehiveAccessor;
 import com.betterbees.mixin.DispenserBlockAccessor;
 import com.betterbees.registry.ModMemoryTypes;
+import com.betterbees.util.BeeScaleService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -18,6 +19,9 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.Bee;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -30,6 +34,11 @@ import net.minecraft.world.level.block.entity.BeehiveBlockEntity;
 import net.minecraft.world.level.block.entity.DispenserBlockEntity;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 
 @GameTestHolder(BetterBees.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -77,6 +86,9 @@ public final class BetterBeesGameTests {
                 babies++;
                 helper.assertTrue(bee.getBrain().hasMemoryValue(ModMemoryTypes.POLLINATING_COOLDOWN.get()),
                         "stored baby should have a Better Bees Brain");
+                AttributeInstance scale = bee.getAttribute(Attributes.SCALE);
+                helper.assertTrue(scale != null && scale.hasModifier(BeeScaleService.MODIFIER_ID),
+                        "stored baby should reconstruct with its individual scale");
             }
             if (entity != null) entity.discard();
         }
@@ -153,6 +165,83 @@ public final class BetterBeesGameTests {
         helper.assertTrue(bee.getBrain().hasMemoryValue(ModMemoryTypes.POLLINATING_COOLDOWN.get()),
                 "Better Bees cooldown memory should be registered on the bee Brain");
         bee.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void beeScaleIsStableUniformAndConfigurable(GameTestHelper helper) {
+        UUID sample = UUID.fromString("6f3f37a2-928d-41c6-88f6-c88ea50c34be");
+        float first = BeeScaleService.scale(sample, 0.20D, 0.35D);
+        float repeated = BeeScaleService.scale(sample, 0.20D, 0.35D);
+        helper.assertTrue(Float.compare(first, repeated) == 0, "one UUID must always produce the same scale");
+        helper.assertTrue(first >= 0.20F && first <= 0.35F, "default scale must remain inside its bounds");
+        helper.assertTrue(Float.compare(first, BeeScaleService.scale(sample, 0.35D, 0.20D)) == 0,
+                "inverted bounds must normalize to the same scale");
+        helper.assertTrue(Float.compare(1.0F, BeeScaleService.scale(sample, 1.0D, 1.0D)) == 0,
+                "equal vanilla bounds must disable scaling");
+
+        Set<Float> observed = new HashSet<>();
+        for (int i = 0; i < 64; i++) {
+            UUID uuid = UUID.nameUUIDFromBytes(("betterbees-scale-" + i).getBytes(StandardCharsets.UTF_8));
+            observed.add(BeeScaleService.scale(uuid, 0.20D, 0.35D));
+        }
+        helper.assertTrue(observed.size() > 48, "UUID mapping should produce varied individual scales");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void nativeScaleAttributeControlsPhysicalBeeSize(GameTestHelper helper) {
+        Bee bee = EntityType.BEE.create(helper.getLevel());
+        helper.assertTrue(bee != null, "bee should be constructible");
+        helper.assertTrue(BeeScaleService.apply(bee), "server should apply an individual bee scale");
+
+        AttributeInstance scaleAttribute = bee.getAttribute(Attributes.SCALE);
+        helper.assertTrue(scaleAttribute != null, "bee should expose the generic scale attribute");
+        helper.assertTrue(scaleAttribute.hasModifier(BeeScaleService.MODIFIER_ID),
+                "individual scale should use the Better Bees transient modifier");
+        helper.assertTrue(Attributes.SCALE.value().isClientSyncable(),
+                "vanilla scale attribute must synchronize to clients");
+
+        float scale = bee.getScale();
+        helper.assertTrue(scale >= BetterBeesConfig.minimumBeeScale()
+                        && scale <= BetterBeesConfig.maximumBeeScale(),
+                "applied scale must use the effective configured range");
+        float adultWidth = bee.getDimensions(Pose.STANDING).width();
+        float adultHeight = bee.getDimensions(Pose.STANDING).height();
+        helper.assertTrue(Math.abs(adultWidth - bee.getType().getDimensions().width() * scale) < 0.0001F,
+                "adult hitbox width should match the rendered scale");
+        helper.assertTrue(Math.abs(adultHeight - bee.getType().getDimensions().height() * scale) < 0.0001F,
+                "adult hitbox height should match the rendered scale");
+
+        bee.setBaby(true);
+        helper.assertTrue(Math.abs(bee.getDimensions(Pose.STANDING).width() - adultWidth * 0.5F) < 0.0001F,
+                "baby width should retain vanilla's additional half-size multiplier");
+        helper.assertTrue(Math.abs(bee.getDimensions(Pose.STANDING).height() - adultHeight * 0.5F) < 0.0001F,
+                "baby height should retain vanilla's additional half-size multiplier");
+        bee.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void beeScaleUsesUuidWithoutPersistentModifierData(GameTestHelper helper) {
+        Bee original = EntityType.BEE.create(helper.getLevel());
+        Bee restored = EntityType.BEE.create(helper.getLevel());
+        helper.assertTrue(original != null && restored != null, "bees should be constructible");
+        UUID uuid = UUID.fromString("1903c183-36f8-4778-9d81-5b88c7243379");
+        original.setUUID(uuid);
+        restored.setUUID(uuid);
+        BeeScaleService.apply(original);
+        BeeScaleService.apply(restored);
+        helper.assertTrue(Float.compare(original.getScale(), restored.getScale()) == 0,
+                "the same saved UUID must restore the same individual scale");
+
+        CompoundTag saved = new CompoundTag();
+        original.saveWithoutId(saved);
+        helper.assertFalse(saved.getList("attributes", CompoundTag.TAG_COMPOUND).toString()
+                        .contains(BeeScaleService.MODIFIER_ID.toString()),
+                "transient scale modifier must not be written to entity or hive NBT");
+        original.discard();
+        restored.discard();
         helper.succeed();
     }
 

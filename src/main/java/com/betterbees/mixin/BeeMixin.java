@@ -4,6 +4,7 @@ import com.betterbees.ai.BeeAi;
 import com.betterbees.config.BetterBeesConfig;
 import com.betterbees.registry.ModMemoryTypes;
 import com.betterbees.registry.ModSensorTypes;
+import com.betterbees.util.BeeScaleService;
 import com.betterbees.util.HiveMemory;
 import com.betterbees.hive.HiveFlowerService;
 import com.google.common.collect.ImmutableList;
@@ -70,6 +71,7 @@ public abstract class BeeMixin extends Animal implements HiveMemory {
 
     @Unique private BlockPos betterbees$memorizedHome;
     @Unique private int betterbees$honeyCooldown;
+    @Unique private boolean betterbees$scaleInitialized;
     @Shadow private @Nullable UUID persistentAngerTarget;
     @Shadow public abstract @Nullable BlockPos getHivePos();
 
@@ -129,6 +131,13 @@ public abstract class BeeMixin extends Animal implements HiveMemory {
         else if (returnTrigger) getBrain().setMemory(ModMemoryTypes.WANTS_HIVE.get(), true);
     }
 
+    @Inject(method = "customServerAiStep", at = @At("HEAD"))
+    private void betterbees$initializeScaleFallback(CallbackInfo ci) {
+        if (!betterbees$scaleInitialized) {
+            betterbees$scaleInitialized = BeeScaleService.apply((Bee) (Object) this);
+        }
+    }
+
     @Inject(method = "addAdditionalSaveData", at = @At("RETURN"))
     private void betterbees$save(CompoundTag tag, CallbackInfo ci) {
         tag.putInt("BetterBeesHoneyCooldown", betterbees$honeyCooldown);
@@ -140,11 +149,15 @@ public abstract class BeeMixin extends Animal implements HiveMemory {
         betterbees$honeyCooldown = tag.getInt("BetterBeesHoneyCooldown");
         NbtUtils.readBlockPos(tag, "BetterBeesMemorizedHome").ifPresent(pos -> betterbees$memorizedHome = pos);
         if (betterbees$memorizedHome == null) betterbees$memorizedHome = getHivePos();
+        betterbees$scaleInitialized = BeeScaleService.apply((Bee) (Object) this);
     }
 
     @Inject(method = "getBreedOffspring(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/AgeableMob;)Lnet/minecraft/world/entity/animal/Bee;", at = @At("RETURN"))
     private void betterbees$initializeOffspring(ServerLevel level, AgeableMob partner, CallbackInfoReturnable<Bee> cir) {
-        if (cir.getReturnValue() != null) BeeAi.initMemories(cir.getReturnValue(), cir.getReturnValue().getRandom());
+        if (cir.getReturnValue() != null) {
+            BeeAi.initMemories(cir.getReturnValue(), cir.getReturnValue().getRandom());
+            BeeScaleService.apply(cir.getReturnValue());
+        }
     }
 
     @Inject(method = "isFlapping", at = @At("RETURN"), cancellable = true)
@@ -166,7 +179,9 @@ public abstract class BeeMixin extends Animal implements HiveMemory {
     public SpawnGroupData finalizeSpawn(ServerLevelAccessor level, DifficultyInstance difficulty, MobSpawnType reason,
                                         @Nullable SpawnGroupData data) {
         BeeAi.initMemories((Bee) (Object) this, level.getRandom());
-        return super.finalizeSpawn(level, difficulty, reason, data);
+        SpawnGroupData result = super.finalizeSpawn(level, difficulty, reason, data);
+        betterbees$scaleInitialized = BeeScaleService.apply((Bee) (Object) this);
+        return result;
     }
 
     public Brain.Provider<Bee> brainProvider() { return Brain.provider(betterbees$memories(), betterbees$sensors()); }

@@ -90,6 +90,14 @@ config="${mod_id}.mixins.json"
     side="BOTH"
 
 [[dependencies.${mod_id}]]
+    modId="realisticbees"
+    type="incompatible"
+    reason="Both mods change physical bee scale and beehive behavior."
+    versionRange="[0,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
     modId="jade"
     type="optional"
     reason="Displays Better Bees' exact hive honey and occupant capacities."

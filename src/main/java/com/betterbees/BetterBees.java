@@ -28,7 +28,7 @@ public final class BetterBees {
 
     private void serverStarted(ServerStartedEvent event) {
         LOGGER.info(
-                "Better Bees active: hive capacity={}, honey capacity={}, harvest cost={}, shears honeycomb={}-{}, indoor breeding={}, interval={} ticks, chance={}, flower scan budget={}, flower cache size={}, hive path failures={}.",
+                "Better Bees active: hive capacity={}, honey capacity={}, harvest cost={}, shears honeycomb={}-{}, indoor breeding={}, interval={} ticks, chance={}, flower scan budget={}, flower cache size={}, hive path failures={}, bee scale={}-{}.",
                 BetterBeesConfig.hiveCapacity(),
                 BetterBeesConfig.honeyCapacity(),
                 BetterBeesConfig.harvestCost(),
@@ -39,7 +39,9 @@ public final class BetterBees {
                 BetterBeesConfig.breedingChance(),
                 BetterBeesConfig.flowerScanBudget(),
                 BetterBeesConfig.flowerCacheSize(),
-                BetterBeesConfig.hivePathFailuresBeforeBlacklist()
+                BetterBeesConfig.hivePathFailuresBeforeBlacklist(),
+                BetterBeesConfig.minimumBeeScale(),
+                BetterBeesConfig.maximumBeeScale()
         );
         if (BetterBeesConfig.configuredHarvestCost() > BetterBeesConfig.honeyCapacity()) {
             LOGGER.warn("Better Bees harvest_cost={} exceeds honey_capacity={}; effective harvest cost is {}.",
@@ -48,6 +50,10 @@ public final class BetterBees {
         if (BetterBeesConfig.configuredShearsHoneycombMin() > BetterBeesConfig.configuredShearsHoneycombMax()) {
             LOGGER.warn("Better Bees shears honeycomb bounds were inverted; effective range is {}-{}.",
                     BetterBeesConfig.shearsHoneycombMin(), BetterBeesConfig.shearsHoneycombMax());
+        }
+        if (BetterBeesConfig.configuredMinimumBeeScale() > BetterBeesConfig.configuredMaximumBeeScale()) {
+            LOGGER.warn("Better Bees bee scale bounds were inverted; effective range is {}-{}.",
+                    BetterBeesConfig.minimumBeeScale(), BetterBeesConfig.maximumBeeScale());
         }
     }
 }
