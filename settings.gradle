@@ -1,5 +1,6 @@
 pluginManagement {
     repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
         gradlePluginPortal()
     }
 }
@@ -14,4 +15,8 @@ rootProject.name = 'betterbees'
     def projectName = "mc${minecraftVersion.replace('.', '_')}"
     include(projectName)
     project(":${projectName}").projectDir = file("versions/${minecraftVersion}")
+
+    def fabricProjectName = "fabricMc${minecraftVersion.replace('.', '_')}"
+    include(fabricProjectName)
+    project(":${fabricProjectName}").projectDir = file("fabric-versions/${minecraftVersion}")
 }

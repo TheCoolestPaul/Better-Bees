@@ -2,6 +2,7 @@ package com.betterbees.mixin;
 
 import com.betterbees.hive.HiveHoneyService;
 import com.betterbees.platform.VersionHooks;
+import com.betterbees.platform.LoaderHooks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -21,7 +22,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
-import net.neoforged.neoforge.common.ItemAbilities;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -43,7 +43,7 @@ public abstract class BeehiveBlockMixin {
     private void betterbees$incrementalHarvest(ItemStack stack, BlockState state, Level level, BlockPos pos,
                                                 Player player, InteractionHand hand, BlockHitResult hitResult,
                                                 CallbackInfoReturnable<Object> cir) {
-        boolean shears = stack.canPerformAction(ItemAbilities.SHEARS_HARVEST);
+        boolean shears = LoaderHooks.isShears(stack);
         boolean bottle = stack.is(Items.GLASS_BOTTLE);
         if (!shears && !bottle) return;
         if (level.isClientSide()) {

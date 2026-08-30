@@ -136,18 +136,21 @@ def validate_existing_version(
     display_name: str,
     artifact: Path,
     version_type: str,
-    loader: str,
+    loaders: list[str],
     game_version: str,
     dependencies: list[dict[str, str]],
 ) -> None:
+    if isinstance(loaders, str):
+        loaders = [loaders]
     if version.get("name") != display_name:
         raise ValidationError(f"Existing Modrinth version has unexpected name: {version.get('name')!r}")
     if version.get("version_type") != version_type:
         raise ValidationError(
             f"Existing Modrinth version type is {version.get('version_type')!r}, expected {version_type!r}"
         )
-    if loader not in version.get("loaders", []):
-        raise ValidationError(f"Existing Modrinth version does not include loader {loader}")
+    for loader in loaders:
+        if loader not in version.get("loaders", []):
+            raise ValidationError(f"Existing Modrinth version does not include loader {loader}")
     if game_version not in version.get("game_versions", []):
         raise ValidationError(f"Existing Modrinth version does not include Minecraft {game_version}")
 
@@ -199,7 +202,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--jade-version-range", required=True)
     parser.add_argument("--expected-version", required=True)
     parser.add_argument("--target-project")
-    parser.add_argument("--loader", default="neoforge")
+    parser.add_argument("--loader", action="append", dest="loaders")
     parser.add_argument("--game-version", required=True)
     parser.add_argument("--version-type", choices=("release", "beta", "alpha"), required=True)
     parser.add_argument("--artifact", type=Path)
@@ -213,6 +216,7 @@ def main() -> int:
     args = parse_args()
     try:
         dependencies = load_manifest(args.manifest, args.jade_version_range)
+        loaders = args.loaders or ["neoforge"]
         if not args.online:
             print(f"Validated {len(dependencies)} Modrinth dependency entry")
             return 0
@@ -232,23 +236,19 @@ def main() -> int:
         target = api_get(f"/project/{args.target_project}", token)
         if target.get("id") != args.target_project:
             raise ValidationError(f"Target resolved to the wrong Modrinth project: {target.get('id')!r}")
-        if args.loader not in target.get("loaders", []):
-            raise ValidationError(f"Target project does not advertise loader {args.loader}")
         print(f"Validated target project {target.get('title')} ({target.get('status')})")
 
         for dependency in dependencies:
             project = api_get(f"/project/{dependency['project_id']}", token)
             if project.get("id") != dependency["project_id"]:
                 raise ValidationError(f"Dependency ID mismatch for {dependency['name']}")
-            versions = compatible_versions(
-                dependency["project_id"], args.loader, args.game_version, token
-            )
-            if not any(
-                version_in_range(version.get("version_number", ""), dependency["version_range"])
-                for version in versions
-            ):
+            # Fabric artifacts are intentionally also marked Quilt-compatible;
+            # their dependencies are published as Fabric artifacts and run unchanged on Quilt.
+            dependency_loader = "fabric" if "fabric" in loaders else loaders[0]
+            versions = compatible_versions(dependency["project_id"], dependency_loader, args.game_version, token)
+            if not any(version_in_range(version.get("version_number", ""), dependency["version_range"]) for version in versions):
                 raise ValidationError(
-                    f"{dependency['name']} has no {args.loader} {args.game_version} version in "
+                    f"{dependency['name']} has no {dependency_loader} {args.game_version} version in "
                     f"{dependency['version_range']}"
                 )
             print(
@@ -268,7 +268,7 @@ def main() -> int:
                 args.display_name,
                 args.artifact,
                 args.version_type,
-                args.loader,
+                loaders,
                 args.game_version,
                 dependencies,
             )

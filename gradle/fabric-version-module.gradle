@@ -1,0 +1,237 @@
+import groovy.json.JsonSlurper
+import groovy.io.FileType
+
+apply plugin: 'java-library'
+apply plugin: 'maven-publish'
+apply plugin: 'idea'
+
+def targets = new JsonSlurper().parse(rootProject.file('gradle/targets.json'))
+def targetEntry = targets.find { entry -> entry.value.fabricProject == project.name }
+if (targetEntry == null) throw new GradleException("No Better Bees Fabric target is configured for ${project.path}")
+def target = targetEntry.value
+apply plugin: (target.java as int) >= 25 ? 'net.fabricmc.fabric-loom' : 'net.fabricmc.fabric-loom-remap'
+
+ext.betterBeesTarget = target
+version = rootProject.mod_version
+group = rootProject.mod_group_id
+base { archivesName = rootProject.mod_id }
+java { toolchain.languageVersion = JavaLanguageVersion.of(target.java as int) }
+
+repositories {
+    maven { url = 'https://maven.fabricmc.net/' }
+    maven { url = 'https://maven.quiltmc.org/repository/release/' }
+    exclusiveContent {
+        forRepository { maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' } }
+        filter { includeGroup 'maven.modrinth' }
+    }
+    mavenCentral()
+}
+
+def useQuilt = providers.gradleProperty('withQuilt').map { it.toBoolean() }.getOrElse(false)
+def withJade = providers.gradleProperty('withJade').map { it.toBoolean() }.getOrElse(false)
+def acceptsOverrides = providers.gradleProperty('fabric_target').map { it == project.name }.getOrElse(false)
+def loaderVersion = (acceptsOverrides ? providers.gradleProperty(useQuilt ? 'quilt_loader_version' : 'fabric_loader_version') : providers.provider { null })
+        .getOrElse(useQuilt ? target.quiltLoaderFloor as String : target.fabricLoaderFloor as String)
+def fabricApiVersion = (acceptsOverrides ? providers.gradleProperty('fabric_api_version') : providers.provider { null })
+        .getOrElse(target.fabricApiFloor as String)
+def jadeVersion = (acceptsOverrides ? providers.gradleProperty('jade_version') : providers.provider { null })
+        .getOrElse(target.fabricJadeFloor as String)
+
+dependencies {
+    minecraft "com.mojang:minecraft:${target.minecraft}"
+    if ((target.java as int) < 25) {
+        mappings loom.officialMojangMappings()
+        if (useQuilt) {
+            modImplementation "org.quiltmc:quilt-loader:${loaderVersion}"
+            implementation "org.quiltmc:quilt-loader:${loaderVersion}"
+            compileOnly "net.fabricmc:fabric-loader:${target.fabricLoaderFloor}"
+            compileOnly "net.fabricmc:sponge-mixin:0.15.5+mixin.0.8.7"
+        }
+        else modImplementation "net.fabricmc:fabric-loader:${loaderVersion}"
+        modImplementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
+        modCompileOnly("maven.modrinth:jade:${jadeVersion}") { transitive = false }
+        if (withJade) modRuntimeOnly("maven.modrinth:jade:${jadeVersion}") { transitive = false }
+    } else {
+        implementation(useQuilt ? "org.quiltmc:quilt-loader:${loaderVersion}" : "net.fabricmc:fabric-loader:${loaderVersion}")
+        if (useQuilt) {
+            compileOnly "net.fabricmc:fabric-loader:${target.fabricLoaderFloor}"
+            compileOnly "net.fabricmc:sponge-mixin:0.15.5+mixin.0.8.7"
+        }
+        implementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
+        compileOnly("maven.modrinth:jade:${jadeVersion}") { transitive = false }
+        if (withJade) runtimeOnly("maven.modrinth:jade:${jadeVersion}") { transitive = false }
+    }
+    implementation include("com.electronwill.night-config:core:3.8.3")
+    implementation include("com.electronwill.night-config:toml:3.8.3")
+    if (useQuilt) {
+        def asmVersion = '9.10.1'
+        ['asm', 'asm-analysis', 'asm-commons', 'asm-tree', 'asm-util'].each {
+            runtimeOnly "org.ow2.asm:${it}:${asmVersion}"
+        }
+        runtimeOnly "org.quiltmc:quilt-json5:1.0.4+final"
+        runtimeOnly "org.quiltmc:quilt-config:1.3.3"
+        runtimeOnly "net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7"
+        runtimeOnly "io.github.llamalad7:mixinextras-fabric:0.5.4"
+    }
+}
+
+def sharedJava = rootProject.file('src/main/java')
+def fabricJava = rootProject.file('fabric/src/main/java')
+def sourceParents = (target.sourceParents ?: []) as List<String>
+def sourceRoots = [sharedJava] + sourceParents.collect { rootProject.file("versions/${it}/src/main/java") } +
+        [rootProject.file("versions/${target.minecraft}/src/main/java"), fabricJava] +
+        sourceParents.collect { rootProject.file("fabric-versions/${it}/src/main/java") } + [project.file('src/main/java')]
+
+def generateFabricSources = tasks.register('generateFabricSources') {
+    sourceRoots.each { if (it.exists()) inputs.dir(it) }
+    inputs.property('sourceReplacements', (target.sourceReplacements ?: [:]).toString())
+    def output = layout.buildDirectory.dir('generated/fabricSources')
+    outputs.dir(output)
+    doLast {
+        def destination = output.get().asFile
+        destination.deleteDir(); destination.mkdirs()
+        def sources = [:]
+        sourceRoots.each { directory ->
+            if (directory.exists()) directory.eachFileRecurse(FileType.FILES) { file ->
+                if (file.name.endsWith('.java')) {
+                    def relative = directory.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+                    sources[relative] = file
+                }
+            }
+        }
+        sources.removeAll { relative, file -> relative.startsWith('com/betterbees/gametest/') }
+        sources.each { relative, inputFile ->
+            def text = inputFile.getText('UTF-8')
+            (target.sourceReplacements ?: [:]).each { oldText, newText -> text = text.replace(oldText, newText) }
+            if (relative == 'com/betterbees/platform/VersionHooks.java') {
+                text = text.replaceAll('(?m)^import net\\.neoforged\\.bus\\.api\\.IEventBus;\\R', '')
+                        .replaceAll('(?m)^import com\\.betterbees\\.gametest\\.ModernGameTestRegistrar;\\R', '')
+                        .replaceAll('(?m)^\\s*public static void registerGameTests\\(IEventBus modBus\\) \\{[^\\r\\n]*}\\R', '')
+            }
+            def out = new File(destination, relative); out.parentFile.mkdirs(); out.setText(text, 'UTF-8')
+        }
+    }
+}
+
+sourceSets.main.java.setSrcDirs([])
+tasks.named('compileJava', JavaCompile).configure {
+    dependsOn generateFabricSources
+    source(layout.buildDirectory.dir('generated/fabricSources'))
+    options.encoding = 'UTF-8'
+    options.release = target.java as int
+}
+
+def generateFabricMetadata = tasks.register('generateFabricMetadata', ProcessResources) {
+    def values = [mod_id: rootProject.mod_id, mod_name: rootProject.mod_name, mod_version: rootProject.mod_version,
+                  mod_description: rootProject.mod_description, mod_authors: rootProject.mod_authors,
+                  mod_license: rootProject.mod_license, minecraft_version: target.minecraft,
+                  java_version: target.java, fabric_loader_range: target.fabricLoaderRange,
+                  jade_version_range: target.fabricJadeRange,
+                  quilt_loader_json: target.get('quiltSupported') == false ? '' : ', "quilt"']
+    inputs.properties values
+    expand values
+    from rootProject.file('fabric/src/main/templates')
+    into layout.buildDirectory.dir('generated/fabricMetadata')
+}
+
+sourceSets.main.resources.setSrcDirs([rootProject.file('src/main/resources')])
+sourceSets.main.resources.srcDir(generateFabricMetadata)
+tasks.named('processResources').configure { dependsOn generateFabricMetadata }
+
+loom {
+    runs {
+        client { client(); runDir = rootProject.file("run/fabric/${target.minecraft}/client") }
+        server { server(); runDir = rootProject.file("run/fabric/${target.minecraft}/server"); programArgs '--nogui' }
+    }
+}
+
+fabricApi {
+    configureTests {
+        createSourceSet = true
+        modId = "betterbees-gametest-${project.name.toLowerCase()}"
+        enableGameTests = true
+        enableClientGameTests = false
+        eula = true
+    }
+}
+
+providers.gradleProperty('upgradeGameDirectory').orNull?.with { directory ->
+    loom.runs.named('gameTest').configure { runDir = file(directory) }
+}
+
+def generateFabricGameTests = tasks.register('generateFabricGameTests') {
+    def inputFile = rootProject.file('src/main/java/com/betterbees/gametest/BetterBeesGameTests.java')
+    def outputFile = layout.buildDirectory.file('generated/fabricGameTests/com/betterbees/gametest/BetterBeesGameTests.java')
+    inputs.file(inputFile)
+    inputs.property('modernGameTests', target.modernGameTests ?: false)
+    inputs.property('sourceReplacements', (target.sourceReplacements ?: [:]).toString())
+    outputs.file(outputFile)
+    doLast {
+        def text = inputFile.getText('UTF-8')
+        (target.sourceReplacements ?: [:]).each { oldText, newText -> text = text.replace(oldText, newText) }
+        text = text.replaceAll('(?m)^import net\\.neoforged\\.neoforge\\.gametest\\.[^;]+;\\R', '')
+                .replaceAll('(?m)^@GameTestHolder\\([^\\r\\n]+\\)\\R', '')
+                .replaceAll('(?m)^@PrefixGameTestTemplate\\([^\\r\\n]+\\)\\R', '')
+                .replace('    private BetterBeesGameTests() {}', '    public BetterBeesGameTests() {}')
+        if (target.modernGameTests) {
+            text = text.replace('import net.minecraft.gametest.framework.GameTest;',
+                    'import net.fabricmc.fabric.api.gametest.v1.GameTest;')
+                    .replace('@GameTest(template = "empty")', '@GameTest')
+                    .replace('public static void ', 'public void ')
+        } else {
+            text = text.replace('import net.minecraft.gametest.framework.GameTest;',
+                    'import net.minecraft.gametest.framework.GameTest;\nimport net.fabricmc.fabric.api.gametest.v1.FabricGameTest;')
+                    .replace('public final class BetterBeesGameTests {',
+                            'public final class BetterBeesGameTests implements FabricGameTest {')
+                    .replace('@GameTest(template = "empty")', '@GameTest(template = FabricGameTest.EMPTY_STRUCTURE)')
+        }
+        def file = outputFile.get().asFile; file.parentFile.mkdirs(); file.setText(text, 'UTF-8')
+    }
+}
+
+def generateFabricGameTestMetadata = tasks.register('generateFabricGameTestMetadata', ProcessResources) {
+    def values = [mod_version: rootProject.mod_version, minecraft_version: target.minecraft,
+                  test_suffix: project.name.toLowerCase()]
+    inputs.properties values
+    expand values
+    from rootProject.file('fabric/src/gametest/templates')
+    into layout.buildDirectory.dir('generated/fabricGameTestResources')
+}
+
+sourceSets.gametest.java.setSrcDirs([layout.buildDirectory.dir('generated/fabricGameTests')])
+sourceSets.gametest.resources.setSrcDirs([layout.buildDirectory.dir('generated/fabricGameTestResources')])
+tasks.named('compileGametestJava', JavaCompile).configure {
+    dependsOn generateFabricGameTests
+    options.encoding = 'UTF-8'
+    options.release = target.java as int
+}
+tasks.named('processGametestResources').configure { dependsOn generateFabricGameTestMetadata }
+
+if (useQuilt) {
+    // Quilt uses its own development-mode property; Loom already publishes the source-set mod groups.
+    loom.runs.named('client').configure {
+        defaultMainClass 'org.quiltmc.loader.impl.launch.knot.KnotClient'
+    }
+    loom.runs.named('server').configure {
+        defaultMainClass 'org.quiltmc.loader.impl.launch.knot.KnotServer'
+    }
+    loom.runs.named('gameTest').configure {
+        defaultMainClass 'org.quiltmc.loader.impl.launch.knot.KnotServer'
+        vmArg '-Dloader.development=true'
+    }
+}
+
+def releaseJarName = "${rootProject.mod_id}-${rootProject.mod_version}-fabric-${target.minecraft}.jar"
+tasks.withType(Jar).configureEach {
+    from(rootProject.file('LICENSE')) { into 'META-INF' }
+    from(rootProject.file('THIRD_PARTY_NOTICES.md')) { into 'META-INF' }
+}
+if ((target.java as int) < 25) {
+    tasks.named('jar', Jar).configure { archiveClassifier = 'dev' }
+    tasks.named('remapJar').configure { archiveFileName = releaseJarName }
+} else {
+    tasks.named('jar', Jar).configure { archiveFileName = releaseJarName }
+}
+
+publishing { publications { register('mavenJava', MavenPublication) { from components.java } } }
+idea.module { downloadSources = true; downloadJavadoc = true }

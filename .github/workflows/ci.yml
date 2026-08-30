@@ -7,66 +7,111 @@ permissions: { contents: read }
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
 jobs:
+  matrices:
+    runs-on: ubuntu-latest
+    outputs:
+      neo: ${{ steps.matrix.outputs.neo }}
+      neo_jade: ${{ steps.matrix.outputs.neo_jade }}
+      fabric: ${{ steps.matrix.outputs.fabric }}
+      quilt: ${{ steps.matrix.outputs.quilt }}
+      fabric_jade: ${{ steps.matrix.outputs.fabric_jade }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: matrix
+        run: |
+          echo "neo=$(python3 scripts/ci/target-matrix.py neo)" >> "$GITHUB_OUTPUT"
+          echo "neo_jade=$(python3 scripts/ci/target-matrix.py neo-jade)" >> "$GITHUB_OUTPUT"
+          echo "fabric=$(python3 scripts/ci/target-matrix.py fabric)" >> "$GITHUB_OUTPUT"
+          echo "quilt=$(python3 scripts/ci/target-matrix.py quilt)" >> "$GITHUB_OUTPUT"
+          echo "fabric_jade=$(python3 scripts/ci/target-matrix.py fabric-jade)" >> "$GITHUB_OUTPUT"
+
   tooling:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - run: python3 scripts/ci/test-resolve-version.py
+      - run: python3 scripts/ci/test-resolve-version.py && python3 scripts/ci/test-validate-modrinth-release.py
       - run: bash -n scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh scripts/ci/world-upgrade.sh
-      - run: python3 -m json.tool gradle/targets.json >/dev/null
-  compatibility:
-    name: ${{ matrix.minecraft }} / NeoForge ${{ matrix.neo }}
+      - run: |
+          python3 -m json.tool gradle/targets.json >/dev/null
+          for kind in neo neo-jade fabric quilt fabric-jade package; do python3 scripts/ci/target-matrix.py "$kind" | python3 -m json.tool >/dev/null; done
+
+  neoforge:
+    needs: matrices
+    name: NeoForge ${{ matrix.minecraft }} / ${{ matrix.neo }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.1', java: '21' }
-          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.50', java: '21' }
-          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.213', java: '21' }
-          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.249', java: '21' }
-          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.121', java: '21' }
-          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.157', java: '21' }
-          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.9', java: '21' }
-          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.54', java: '21' }
-          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.42', java: '21' }
-          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.45', java: '21' }
-          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.71', java: '25' }
-          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.100', java: '25' }
-          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.57', java: '25' }
-          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.72', java: '25' }
+      matrix: ${{ fromJSON(needs.matrices.outputs.neo) }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
         with: { java-version: '${{ matrix.java }}', distribution: temurin }
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo }} :${{ matrix.project }}:build :${{ matrix.project }}:runGameTestServer
-  jade:
-    name: Jade ${{ matrix.jade }} / MC ${{ matrix.minecraft }}
+
+  neoforge_jade:
+    needs: matrices
+    name: NeoForge+Jade ${{ matrix.minecraft }} / ${{ matrix.jade }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.1', jade: '15.1.6+neoforge', java: '21' }
-          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.249', jade: '15.10.6+neoforge', java: '21' }
-          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.121', jade: '17.0.1+neoforge', java: '21' }
-          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.157', jade: '17.3.0+neoforge', java: '21' }
-          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.9', jade: '19.0.4+neoforge', java: '21' }
-          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.54', jade: '19.3.1+neoforge', java: '21' }
-          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.42', jade: '21.0.1+neoforge', java: '21' }
-          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.45', jade: '21.1.7+neoforge', java: '21' }
-          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.71', jade: '26.0.9+neoforge', java: '25' }
-          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.100', jade: '26.1.10+neoforge', java: '25' }
-          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.57', jade: '26.2.2+neoforge', java: '25' }
-          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.72', jade: '26.2.10+neoforge', java: '25' }
+      matrix: ${{ fromJSON(needs.matrices.outputs.neo_jade) }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
         with: { java-version: '${{ matrix.java }}', distribution: temurin }
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo }} -Pjade_version=${{ matrix.jade }} -PwithJade=true :${{ matrix.project }}:build :${{ matrix.project }}:runGameTestServer
+
+  fabric:
+    needs: matrices
+    name: Fabric ${{ matrix.minecraft }} / Loader ${{ matrix.loader }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrices.outputs.fabric) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon -Pfabric_target=${{ matrix.project }} -Pfabric_loader_version=${{ matrix.loader }} -Pfabric_api_version=${{ matrix.api }} :${{ matrix.project }}:build
+
+  quilt:
+    needs: matrices
+    name: Quilt ${{ matrix.minecraft }} / Loader ${{ matrix.loader }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrices.outputs.quilt) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon -Pfabric_target=${{ matrix.project }} -PwithQuilt=true -Pquilt_loader_version=${{ matrix.loader }} -Pfabric_api_version=${{ matrix.api }} :${{ matrix.project }}:build
+
+  fabric_quilt_jade:
+    needs: matrices
+    name: ${{ matrix.platform }}+Jade ${{ matrix.minecraft }} / ${{ matrix.jade }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrices.outputs.fabric_jade) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - if: matrix.platform == 'fabric'
+        run: ./gradlew --no-daemon -Pfabric_target=${{ matrix.project }} -PwithJade=true -Pfabric_loader_version=${{ matrix.loader }} -Pfabric_api_version=${{ matrix.api }} -Pjade_version=${{ matrix.jade }} :${{ matrix.project }}:build
+      - if: matrix.platform == 'quilt'
+        run: ./gradlew --no-daemon -Pfabric_target=${{ matrix.project }} -PwithQuilt=true -PwithJade=true -Pquilt_loader_version=${{ matrix.loader }} -Pfabric_api_version=${{ matrix.api }} -Pjade_version=${{ matrix.jade }} :${{ matrix.project }}:build

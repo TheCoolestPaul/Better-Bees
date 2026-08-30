@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "${mod_id}",
+  "version": "${mod_version}",
+  "name": "${mod_name}",
+  "description": "${mod_description}",
+  "authors": ["${mod_authors}"],
+  "license": "${mod_license}",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.betterbees.BetterBees"],
+    "jade": ["com.betterbees.compat.jade.BetterBeesJadePlugin"]
+  },
+  "mixins": ["${mod_id}.mixins.json"],
+  "depends": {
+    "fabricloader": "${fabric_loader_range}",
+    "minecraft": "${minecraft_version}",
+    "java": ">=${java_version}",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "jade": "${jade_version_range}"
+  },
+  "conflicts": {
+    "brainierbees": "*",
+    "brainier_bees": "*",
+    "realisticbees": "*"
+  },
+  "custom": {
+    "betterbees:tested_loaders": ["fabric"${quilt_loader_json}],
+    "betterbees:jade_range": "${jade_version_range}"
+  }
+}

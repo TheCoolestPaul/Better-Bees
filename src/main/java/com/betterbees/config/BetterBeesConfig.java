@@ -4,6 +4,7 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 
 public final class BetterBeesConfig {
     public static final ModConfigSpec SPEC;
+    private static volatile ConfigSnapshot snapshot = ConfigSnapshot.defaults();
 
     private static final ModConfigSpec.IntValue MAX_WANDER_RADIUS;
     private static final ModConfigSpec.IntValue FLOWER_LOCATE_RANGE;
@@ -103,25 +104,36 @@ public final class BetterBeesConfig {
 
     private BetterBeesConfig() {}
 
-    public static int maxWanderRadius() { return MAX_WANDER_RADIUS.getAsInt(); }
-    public static int flowerLocateRange() { return FLOWER_LOCATE_RANGE.getAsInt(); }
-    public static int searchAttempts() { return SEARCH_ATTEMPTS.getAsInt(); }
-    public static int flowerScanBudget() { return FLOWER_SCAN_BUDGET.getAsInt(); }
-    public static int flowerCacheSize() { return FLOWER_CACHE_SIZE.getAsInt(); }
-    public static int hivePathFailuresBeforeBlacklist() { return HIVE_PATH_FAILURES_BEFORE_BLACKLIST.getAsInt(); }
-    public static int hiveCapacity() { return HIVE_CAPACITY.getAsInt(); }
-    public static int honeyCapacity() { return HONEY_CAPACITY.getAsInt(); }
-    public static int configuredHarvestCost() { return HARVEST_COST.getAsInt(); }
-    public static int harvestCost() { return Math.min(configuredHarvestCost(), honeyCapacity()); }
-    public static int configuredShearsHoneycombMin() { return SHEARS_HONEYCOMB_MIN.getAsInt(); }
-    public static int configuredShearsHoneycombMax() { return SHEARS_HONEYCOMB_MAX.getAsInt(); }
-    public static int shearsHoneycombMin() { return Math.min(configuredShearsHoneycombMin(), configuredShearsHoneycombMax()); }
-    public static int shearsHoneycombMax() { return Math.max(configuredShearsHoneycombMin(), configuredShearsHoneycombMax()); }
-    public static boolean indoorBreedingEnabled() { return INDOOR_BREEDING_ENABLED.getAsBoolean(); }
-    public static int breedingIntervalTicks() { return BREEDING_INTERVAL_TICKS.getAsInt(); }
-    public static double breedingChance() { return BREEDING_CHANCE.getAsDouble(); }
-    public static double configuredMinimumBeeScale() { return MINIMUM_BEE_SCALE.getAsDouble(); }
-    public static double configuredMaximumBeeScale() { return MAXIMUM_BEE_SCALE.getAsDouble(); }
-    public static double minimumBeeScale() { return Math.min(configuredMinimumBeeScale(), configuredMaximumBeeScale()); }
-    public static double maximumBeeScale() { return Math.max(configuredMinimumBeeScale(), configuredMaximumBeeScale()); }
+    public static void refreshSnapshot() {
+        snapshot = new ConfigSnapshot(
+                MAX_WANDER_RADIUS.getAsInt(), FLOWER_LOCATE_RANGE.getAsInt(), SEARCH_ATTEMPTS.getAsInt(),
+                FLOWER_SCAN_BUDGET.getAsInt(), FLOWER_CACHE_SIZE.getAsInt(), HIVE_PATH_FAILURES_BEFORE_BLACKLIST.getAsInt(),
+                HIVE_CAPACITY.getAsInt(), HONEY_CAPACITY.getAsInt(), HARVEST_COST.getAsInt(),
+                SHEARS_HONEYCOMB_MIN.getAsInt(), SHEARS_HONEYCOMB_MAX.getAsInt(), INDOOR_BREEDING_ENABLED.getAsBoolean(),
+                BREEDING_INTERVAL_TICKS.getAsInt(), BREEDING_CHANCE.getAsDouble(),
+                MINIMUM_BEE_SCALE.getAsDouble(), MAXIMUM_BEE_SCALE.getAsDouble());
+    }
+
+    public static ConfigSnapshot snapshot() { return snapshot; }
+    public static int maxWanderRadius() { return snapshot.maxWanderRadius(); }
+    public static int flowerLocateRange() { return snapshot.flowerLocateRange(); }
+    public static int searchAttempts() { return snapshot.searchAttempts(); }
+    public static int flowerScanBudget() { return snapshot.flowerScanBudget(); }
+    public static int flowerCacheSize() { return snapshot.flowerCacheSize(); }
+    public static int hivePathFailuresBeforeBlacklist() { return snapshot.hivePathFailuresBeforeBlacklist(); }
+    public static int hiveCapacity() { return snapshot.hiveCapacity(); }
+    public static int honeyCapacity() { return snapshot.honeyCapacity(); }
+    public static int configuredHarvestCost() { return snapshot.configuredHarvestCost(); }
+    public static int harvestCost() { return snapshot.harvestCost(); }
+    public static int configuredShearsHoneycombMin() { return snapshot.configuredShearsHoneycombMin(); }
+    public static int configuredShearsHoneycombMax() { return snapshot.configuredShearsHoneycombMax(); }
+    public static int shearsHoneycombMin() { return snapshot.shearsHoneycombMin(); }
+    public static int shearsHoneycombMax() { return snapshot.shearsHoneycombMax(); }
+    public static boolean indoorBreedingEnabled() { return snapshot.indoorBreedingEnabled(); }
+    public static int breedingIntervalTicks() { return snapshot.breedingIntervalTicks(); }
+    public static double breedingChance() { return snapshot.breedingChance(); }
+    public static double configuredMinimumBeeScale() { return snapshot.configuredMinimumBeeScale(); }
+    public static double configuredMaximumBeeScale() { return snapshot.configuredMaximumBeeScale(); }
+    public static double minimumBeeScale() { return snapshot.minimumBeeScale(); }
+    public static double maximumBeeScale() { return snapshot.maximumBeeScale(); }
 }

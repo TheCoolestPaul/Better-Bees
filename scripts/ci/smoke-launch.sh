@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 3 ]]; then
-  echo "Usage: $0 <server|client> <Gradle project> <NeoForge version> [additional Gradle arguments...]" >&2
+if [[ $# -lt 4 ]]; then
+  echo "Usage: $0 <server|client> <neoforge|fabric|quilt> <Gradle project> <loader version> [additional Gradle arguments...]" >&2
   exit 2
 fi
 
 mode="$1"
-project="$2"
-neo_version="$3"
+platform="$2"
+project="$3"
+loader_version="$4"
 timeout_seconds="${SMOKE_TIMEOUT_SECONDS:-240}"
 
 case "$mode" in
@@ -30,9 +31,9 @@ case "$mode" in
     ;;
 esac
 
-for argument in "${@:4}"; do
+for argument in "${@:5}"; do
   if [[ "$argument" == "-PwithJade=true" ]]; then
-    markers+=('Loaded plugin from com\.betterbees\.compat\.jade\.BetterBeesJadePlugin')
+    markers+=('com\.betterbees\.compat\.jade\.BetterBeesJadePlugin')
     break
   fi
 done
@@ -41,15 +42,23 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 mkdir -p build/smoke run
-log_file="build/smoke/${mode}-${project}-${neo_version}.log"
+log_file="build/smoke/${mode}-${platform}-${project}-${loader_version}.log"
 if [[ "$mode" == "server" ]]; then
-  minecraft_version="${project#mc}"
+  minecraft_version="${project#fabricMc}"
+  minecraft_version="${minecraft_version#mc}"
   minecraft_version="${minecraft_version//_/.}"
-  mkdir -p "run/${minecraft_version}/server"
-  printf 'eula=true\n' > "run/${minecraft_version}/server/eula.txt"
+  if [[ "$platform" == neoforge ]]; then run_dir="run/${minecraft_version}/server"; else run_dir="run/fabric/${minecraft_version}/server"; fi
+  mkdir -p "$run_dir"
+  printf 'eula=true\n' > "$run_dir/eula.txt"
 fi
 
-command=(./gradlew --no-daemon "-Pneo_version=${neo_version}" "${@:4}" "$gradle_task")
+case "$platform" in
+  neoforge) loader_args=("-Pneo_version=${loader_version}") ;;
+  fabric) loader_args=("-Pfabric_target=${project}" "-Pfabric_loader_version=${loader_version}") ;;
+  quilt) loader_args=("-Pfabric_target=${project}" -PwithQuilt=true "-Pquilt_loader_version=${loader_version}") ;;
+  *) echo "Unknown platform: $platform" >&2; exit 2 ;;
+esac
+command=(./gradlew --no-daemon "${loader_args[@]}" "${@:5}" "$gradle_task")
 if [[ "$mode" == "client" ]]; then
   # Hosted runners have no physical audio device. OpenAL's null backend keeps
   # that environmental limitation separate from client/mod initialization.
@@ -69,7 +78,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "Starting Better Bees $mode smoke test for $project on NeoForge $neo_version"
+echo "Starting Better Bees $mode smoke test for $project on $platform $loader_version"
 setsid "${command[@]}" >"$log_file" 2>&1 &
 smoke_pid=$!
 deadline=$((SECONDS + timeout_seconds))
@@ -91,7 +100,7 @@ while (( SECONDS < deadline )); do
     fi
   done
   if [[ "$healthy" == true ]]; then
-    echo "Better Bees $mode reached a healthy initialized state on NeoForge $neo_version"
+    echo "Better Bees $mode reached a healthy initialized state on $platform $loader_version"
     exit 0
   fi
 

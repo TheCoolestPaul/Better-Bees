@@ -25,6 +25,10 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.is_prerelease }}
       modrinth_type: ${{ steps.version.outputs.modrinth_version_type }}
+      fabric: ${{ steps.matrix.outputs.fabric }}
+      quilt: ${{ steps.matrix.outputs.quilt }}
+      fabric_jade: ${{ steps.matrix.outputs.fabric_jade }}
+      publish: ${{ steps.matrix.outputs.publish }}
     steps:
       - uses: actions/checkout@v7
         with: { ref: main }
@@ -42,6 +46,12 @@ jobs:
           LAST_RELEASE: ${{ steps.history.outputs.version }}
         run: python3 scripts/ci/resolve-version.py --mode "$RELEASE_MODE" --custom-version "$CUSTOM_VERSION" --last-release "$LAST_RELEASE" --github-output "$GITHUB_OUTPUT"
       - run: python3 scripts/ci/test-resolve-version.py
+      - id: matrix
+        run: |
+          echo "fabric=$(python3 scripts/ci/target-matrix.py fabric)" >> "$GITHUB_OUTPUT"
+          echo "quilt=$(python3 scripts/ci/target-matrix.py quilt)" >> "$GITHUB_OUTPUT"
+          echo "fabric_jade=$(python3 scripts/ci/target-matrix.py fabric-jade)" >> "$GITHUB_OUTPUT"
+          echo "publish=$(python3 scripts/ci/target-matrix.py package)" >> "$GITHUB_OUTPUT"
       - run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           # Better Bees release
@@ -117,6 +127,60 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew --no-daemon -Pneo_version=${{ matrix.target.neo }} -Pjade_version=${{ matrix.target.jade }} -PwithJade=true :${{ matrix.target.project }}:build :${{ matrix.target.project }}:runGameTestServer
 
+  fabric:
+    needs: resolve
+    name: Fabric ${{ matrix.minecraft }} / Loader ${{ matrix.loader }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.fabric) }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - run: sed -i 's/^mod_version=.*/mod_version=${{ needs.resolve.outputs.version }}/' gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon -Pfabric_target=${{ matrix.project }} -Pfabric_loader_version=${{ matrix.loader }} -Pfabric_api_version=${{ matrix.api }} :${{ matrix.project }}:build
+
+  quilt:
+    needs: resolve
+    name: Quilt ${{ matrix.minecraft }} / Loader ${{ matrix.loader }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.quilt) }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - run: sed -i 's/^mod_version=.*/mod_version=${{ needs.resolve.outputs.version }}/' gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon -Pfabric_target=${{ matrix.project }} -PwithQuilt=true -Pquilt_loader_version=${{ matrix.loader }} -Pfabric_api_version=${{ matrix.api }} :${{ matrix.project }}:build
+
+  fabric_quilt_jade:
+    needs: resolve
+    name: ${{ matrix.platform }}+Jade ${{ matrix.minecraft }} / ${{ matrix.jade }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.fabric_jade) }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - run: sed -i 's/^mod_version=.*/mod_version=${{ needs.resolve.outputs.version }}/' gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - if: matrix.platform == 'fabric'
+        run: ./gradlew --no-daemon -Pfabric_target=${{ matrix.project }} -PwithJade=true -Pfabric_loader_version=${{ matrix.loader }} -Pfabric_api_version=${{ matrix.api }} -Pjade_version=${{ matrix.jade }} :${{ matrix.project }}:build
+      - if: matrix.platform == 'quilt'
+        run: ./gradlew --no-daemon -Pfabric_target=${{ matrix.project }} -PwithQuilt=true -PwithJade=true -Pquilt_loader_version=${{ matrix.loader }} -Pfabric_api_version=${{ matrix.api }} -Pjade_version=${{ matrix.jade }} :${{ matrix.project }}:build
+
   smoke:
     needs: resolve
     name: ${{ matrix.mode }} ${{ matrix.target.minecraft }} Jade=${{ matrix.jade }}
@@ -150,15 +214,43 @@ jobs:
       - if: matrix.mode == 'client'
         run: sudo apt-get update && sudo apt-get install --yes xvfb libgl1-mesa-dri
       - if: matrix.jade == false
-        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.target.project }} ${{ matrix.target.neo }}
+        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} neoforge ${{ matrix.target.project }} ${{ matrix.target.neo }}
       - if: matrix.jade == true
-        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.target.project }} ${{ matrix.target.neo }} -PwithJade=true -Pjade_version=${{ matrix.target.jade_version }}
+        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} neoforge ${{ matrix.target.project }} ${{ matrix.target.neo }} -PwithJade=true -Pjade_version=${{ matrix.target.jade_version }}
+
+  fabric_quilt_smoke:
+    needs: resolve
+    name: ${{ matrix.mode }} ${{ matrix.target.platform }} ${{ matrix.target.minecraft }} Jade=${{ matrix.jade }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [server, client]
+        jade: [false, true]
+        target: ${{ fromJSON(needs.resolve.outputs.fabric_jade).include }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - run: sed -i 's/^mod_version=.*/mod_version=${{ needs.resolve.outputs.version }}/' gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.target.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - if: matrix.mode == 'client'
+        run: sudo apt-get update && sudo apt-get install --yes xvfb libgl1-mesa-dri
+      - if: matrix.jade == false
+        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.target.platform }} ${{ matrix.target.project }} ${{ matrix.target.loader }} -Pfabric_api_version=${{ matrix.target.api }}
+      - if: matrix.jade == true
+        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.target.platform }} ${{ matrix.target.project }} ${{ matrix.target.loader }} -Pfabric_api_version=${{ matrix.target.api }} -PwithJade=true -Pjade_version=${{ matrix.target.jade }}
 
   world_upgrade:
     needs: resolve
-    name: Sequential world upgrade
+    name: Sequential ${{ matrix.platform }} world upgrade
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: { platform: [neoforge, fabric, quilt] }
     steps:
       - uses: actions/checkout@v7
         with: { ref: '${{ needs.resolve.outputs.sha }}' }
@@ -166,10 +258,10 @@ jobs:
       - uses: actions/setup-java@v5
         with: { java-version: '25', distribution: temurin }
       - uses: gradle/actions/setup-gradle@v6
-      - run: bash scripts/ci/world-upgrade.sh "$RUNNER_TEMP/betterbees-upgrade-world"
+      - run: bash scripts/ci/world-upgrade.sh ${{ matrix.platform }} "$RUNNER_TEMP/betterbees-upgrade-${{ matrix.platform }}"
 
   package:
-    needs: [resolve, compatibility, jade, smoke, world_upgrade]
+    needs: [resolve, compatibility, jade, fabric, quilt, fabric_quilt_jade, smoke, fabric_quilt_smoke, world_upgrade]
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -190,11 +282,16 @@ jobs:
           version=os.environ['VERSION']
           out=pathlib.Path('release-assets')
           for mc,t in targets.items():
-              name=f'betterbees-{version}-neoforge-{mc}.jar'
-              source=pathlib.Path('versions')/mc/'build/libs'/name
-              dest=out/name
-              dest.write_bytes(source.read_bytes())
-              subprocess.run(['bash','scripts/ci/verify-jar.sh',str(dest),version,mc,str(t['java']),t['neoRange'],t['minecraftRange'],t['jadeRange']],check=True)
+              artifacts = (
+                  ('neoforge', pathlib.Path('versions')/mc/'build/libs', t['neoRange'], t['jadeRange']),
+                  ('fabric', pathlib.Path('fabric-versions')/mc/'build/libs', t['fabricLoaderRange'], t['fabricJadeRange']),
+              )
+              for platform,folder,loader_range,jade_range in artifacts:
+                  name=f'betterbees-{version}-{platform}-{mc}.jar'
+                  source=folder/name
+                  dest=out/name
+                  dest.write_bytes(source.read_bytes())
+                  subprocess.run(['bash','scripts/ci/verify-jar.sh',platform,str(dest),version,mc,str(t['java']),loader_range,t['minecraftRange'],jade_range],check=True)
           PY
           cd release-assets
           sha256sum *.jar > SHA256SUMS
@@ -251,14 +348,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        target:
-          - { minecraft: '1.21.1', java: '21', jade_range: '[15.1.6,16)' }
-          - { minecraft: '1.21.4', java: '21', jade_range: '[17.0.1,18)' }
-          - { minecraft: '1.21.8', java: '21', jade_range: '[19.0.4,20)' }
-          - { minecraft: '1.21.11', java: '21', jade_range: '[21.0.1,22)' }
-          - { minecraft: '26.1.2', java: '25', jade_range: '[26.0.9,27)' }
-          - { minecraft: '26.2', java: '25', jade_range: '[26.2.2,27)' }
+      matrix: ${{ fromJSON(needs.resolve.outputs.publish) }}
     steps:
       - uses: actions/checkout@v7
         with: { ref: '${{ needs.resolve.outputs.sha }}' }
@@ -272,34 +362,41 @@ jobs:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
           VERSION: ${{ needs.resolve.outputs.version }}
           VERSION_TYPE: ${{ needs.resolve.outputs.modrinth_type }}
-          MC: ${{ matrix.target.minecraft }}
-          JADE_RANGE: ${{ matrix.target.jade_range }}
+          MC: ${{ matrix.minecraft }}
+          PLATFORM: ${{ matrix.platform }}
+          JADE_RANGE: ${{ matrix.jadeRange }}
+          FABRIC_API_RANGE: ${{ matrix.fabricApiRange }}
+          LOADERS: ${{ matrix.loaders }}
         run: |
           python3 - <<'PY'
           import json, os
-          json.dump({'dependencies':[{'name':'Jade','project_id':'nvQzSEkH','dependency_type':'optional','version_range':os.environ['JADE_RANGE']}]}, open('/tmp/dependencies.json','w'))
+          deps=[{'name':'Jade','project_id':'nvQzSEkH','dependency_type':'optional','version_range':os.environ['JADE_RANGE']}]
+          if os.environ['PLATFORM']=='fabric':
+              deps.append({'name':'Fabric API','project_id':'P7dR8mSH','dependency_type':'required','version_range':os.environ['FABRIC_API_RANGE']})
+          json.dump({'dependencies':deps}, open('/tmp/dependencies.json','w'))
           PY
+          loaders=(); for loader in $LOADERS; do loaders+=(--loader "$loader"); done
           python3 scripts/ci/validate-modrinth-release.py \
             --manifest /tmp/dependencies.json --jade-version-range "$JADE_RANGE" \
-            --expected-version "$VERSION+mc$MC" --target-project zMjnE1QT \
+            --expected-version "$VERSION+$PLATFORM.mc$MC" --target-project zMjnE1QT "${loaders[@]}" \
             --game-version "$MC" --version-type "$VERSION_TYPE" \
-            --artifact "release-assets/betterbees-$VERSION-neoforge-$MC.jar" \
-            --display-name "Better Bees $VERSION for Minecraft $MC" --online
+            --artifact "release-assets/betterbees-$VERSION-$PLATFORM-$MC.jar" \
+            --display-name "Better Bees $VERSION ($PLATFORM) for Minecraft $MC" --online
       - uses: Kira-NT/mc-publish@52307b03863581dec6b652b83e597aec02ebb075
         if: steps.modrinth.outputs.publish == 'true'
         with:
           modrinth-id: zMjnE1QT
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          modrinth-files: release-assets/betterbees-${{ needs.resolve.outputs.version }}-neoforge-${{ matrix.target.minecraft }}.jar
-          modrinth-name: Better Bees ${{ needs.resolve.outputs.version }} for Minecraft ${{ matrix.target.minecraft }}
-          modrinth-version: ${{ needs.resolve.outputs.version }}+mc${{ matrix.target.minecraft }}
+          modrinth-files: release-assets/betterbees-${{ needs.resolve.outputs.version }}-${{ matrix.platform }}-${{ matrix.minecraft }}.jar
+          modrinth-name: Better Bees ${{ needs.resolve.outputs.version }} (${{ matrix.platform }}) for Minecraft ${{ matrix.minecraft }}
+          modrinth-version: ${{ needs.resolve.outputs.version }}+${{ matrix.platform }}.mc${{ matrix.minecraft }}
           modrinth-version-type: ${{ needs.resolve.outputs.modrinth_type }}
           modrinth-changelog-file: release-assets/release-notes.md
-          modrinth-loaders: neoforge
-          modrinth-game-versions: ${{ matrix.target.minecraft }}
+          modrinth-loaders: ${{ matrix.loaders }}
+          modrinth-game-versions: ${{ matrix.minecraft }}
           modrinth-game-version-filter: none
-          modrinth-dependencies: nvQzSEkH(optional)
-          modrinth-java: ${{ matrix.target.java }}
+          modrinth-dependencies: ${{ steps.modrinth.outputs.dependencies }}
+          modrinth-java: ${{ matrix.java }}
           modrinth-retry-attempts: 3
           modrinth-fail-mode: fail
       - name: Verify Modrinth publication
@@ -307,12 +404,15 @@ jobs:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
           VERSION: ${{ needs.resolve.outputs.version }}
           VERSION_TYPE: ${{ needs.resolve.outputs.modrinth_type }}
-          MC: ${{ matrix.target.minecraft }}
-          JADE_RANGE: ${{ matrix.target.jade_range }}
+          MC: ${{ matrix.minecraft }}
+          PLATFORM: ${{ matrix.platform }}
+          JADE_RANGE: ${{ matrix.jadeRange }}
+          LOADERS: ${{ matrix.loaders }}
         run: |
+          loaders=(); for loader in $LOADERS; do loaders+=(--loader "$loader"); done
           python3 scripts/ci/validate-modrinth-release.py \
             --manifest /tmp/dependencies.json --jade-version-range "$JADE_RANGE" \
-            --expected-version "$VERSION+mc$MC" --target-project zMjnE1QT \
+            --expected-version "$VERSION+$PLATFORM.mc$MC" --target-project zMjnE1QT "${loaders[@]}" \
             --game-version "$MC" --version-type "$VERSION_TYPE" \
-            --artifact "release-assets/betterbees-$VERSION-neoforge-$MC.jar" \
-            --display-name "Better Bees $VERSION for Minecraft $MC" --online --expect-existing
+            --artifact "release-assets/betterbees-$VERSION-$PLATFORM-$MC.jar" \
+            --display-name "Better Bees $VERSION ($PLATFORM) for Minecraft $MC" --online --expect-existing

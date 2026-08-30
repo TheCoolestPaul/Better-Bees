@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "betterbees-gametest-${test_suffix}",
+  "version": "${mod_version}",
+  "name": "Better Bees GameTests (${minecraft_version})",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-gametest": ["com.betterbees.gametest.BetterBeesGameTests"]
+  },
+  "depends": {
+    "betterbees": "${mod_version}",
+    "fabric-gametest-api-v1": "*"
+  }
+}

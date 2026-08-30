@@ -1,13 +1,15 @@
 plugins {
     id 'base'
     id 'net.neoforged.moddev' version '2.0.144' apply false
+    id 'net.fabricmc.fabric-loom-remap' version '1.17.20' apply false
+    id 'net.fabricmc.fabric-loom' version '1.17.20' apply false
     id 'idea'
 }
 
 version = mod_version
 group = mod_group_id
 
-def versionProjects = subprojects.findAll { it.name.startsWith('mc') }
+def versionProjects = subprojects.findAll { it.name.startsWith('mc') || it.name.startsWith('fabricMc') }
 
 tasks.register('buildAll') {
     group = 'build'
@@ -18,7 +20,17 @@ tasks.register('buildAll') {
 tasks.register('gameTestAll') {
     group = 'verification'
     description = 'Runs the GameTest server for every supported Minecraft artifact.'
-    dependsOn(versionProjects.collect { it.tasks.named('runGameTestServer') })
+    dependsOn(versionProjects.collect { p -> p.tasks.named(p.name.startsWith('fabricMc') ? 'runGameTest' : 'runGameTestServer') })
+}
+
+tasks.register('buildNeoForgeAll') {
+    group = 'build'
+    dependsOn(versionProjects.findAll { it.name.startsWith('mc') }.collect { it.tasks.named('build') })
+}
+
+tasks.register('buildFabricAll') {
+    group = 'build'
+    dependsOn(versionProjects.findAll { it.name.startsWith('fabricMc') }.collect { it.tasks.named('build') })
 }
 
 tasks.named('assemble') {

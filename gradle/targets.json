@@ -1,27 +1,39 @@
 {
   "1.21.1": {
-    "project": "mc1_21_1", "minecraft": "1.21.1", "java": 21,
+    "project": "mc1_21_1", "fabricProject": "fabricMc1_21_1", "minecraft": "1.21.1", "java": 21,
     "minecraftRange": "[1.21.1,1.21.2)", "neoFloor": "21.1.1", "neoLatest": "21.1.249",
     "neoRange": "[21.1.1,21.2)", "neoCheckpoints": ["21.1.1", "21.1.50", "21.1.213", "21.1.249"],
     "jadeFloor": "15.1.6+neoforge", "jadeLatest": "15.10.6+neoforge", "jadeRange": "[15.1.6,16)",
+    "fabricLoaderFloor": "0.16.0", "fabricLoaderLatest": "0.19.5", "fabricLoaderRange": ">=0.16.0",
+    "fabricApiFloor": "0.101.2+1.21.1", "fabricApiLatest": "0.116.15+1.21.1", "fabricApiRange": "[0.101.2,1)",
+    "quiltLoaderFloor": "0.27.0", "quiltLoaderLatest": "0.30.1",
+    "fabricJadeFloor": "15.1.5+fabric", "fabricJadeLatest": "15.10.6+fabric", "fabricJadeRange": ">=15.1.5 <16", "fabricJadeModrinthRange": "[15.1.5,16)",
     "parchmentMinecraft": "1.21.1", "parchmentMappings": "2024.11.17"
   },
   "1.21.4": {
-    "project": "mc1_21_4", "minecraft": "1.21.4", "java": 21,
+    "project": "mc1_21_4", "fabricProject": "fabricMc1_21_4", "minecraft": "1.21.4", "java": 21,
     "minecraftRange": "[1.21.4,1.21.5)", "neoFloor": "21.4.121", "neoLatest": "21.4.157",
     "neoRange": "[21.4.121,21.5)", "neoCheckpoints": ["21.4.121", "21.4.157"],
-    "jadeFloor": "17.0.1+neoforge", "jadeLatest": "17.3.0+neoforge", "jadeRange": "[17.0.1,18)"
+    "jadeFloor": "17.0.1+neoforge", "jadeLatest": "17.3.0+neoforge", "jadeRange": "[17.0.1,18)",
+    "fabricLoaderFloor": "0.16.10", "fabricLoaderLatest": "0.19.5", "fabricLoaderRange": ">=0.16.10",
+    "fabricApiFloor": "0.110.5+1.21.4", "fabricApiLatest": "0.119.4+1.21.4", "fabricApiRange": "[0.110.5,1)",
+    "quiltLoaderFloor": "0.28.0", "quiltLoaderLatest": "0.30.1",
+    "fabricJadeFloor": "17.0.0+fabric", "fabricJadeLatest": "17.2.2+fabric", "fabricJadeRange": ">=17.0.0 <18", "fabricJadeModrinthRange": "[17.0.0,18)"
   },
   "1.21.8": {
-    "project": "mc1_21_8", "minecraft": "1.21.8", "java": 21,
+    "project": "mc1_21_8", "fabricProject": "fabricMc1_21_8", "minecraft": "1.21.8", "java": 21,
     "modernGameTests": true,
     "sourceParents": ["1.21.4"],
     "minecraftRange": "[1.21.8,1.21.9)", "neoFloor": "21.8.9", "neoLatest": "21.8.54",
     "neoRange": "[21.8.9,21.9)", "neoCheckpoints": ["21.8.9", "21.8.54"],
-    "jadeFloor": "19.0.4+neoforge", "jadeLatest": "19.3.1+neoforge", "jadeRange": "[19.0.4,20)"
+    "jadeFloor": "19.0.4+neoforge", "jadeLatest": "19.3.1+neoforge", "jadeRange": "[19.0.4,20)",
+    "fabricLoaderFloor": "0.16.14", "fabricLoaderLatest": "0.19.5", "fabricLoaderRange": ">=0.16.14",
+    "fabricApiFloor": "0.129.0+1.21.8", "fabricApiLatest": "0.136.1+1.21.8", "fabricApiRange": "[0.129.0,1)",
+    "quiltLoaderFloor": "0.29.2", "quiltLoaderLatest": "0.30.1",
+    "fabricJadeFloor": "19.0.4+fabric", "fabricJadeLatest": "19.3.2+fabric", "fabricJadeRange": ">=19.0.4 <20", "fabricJadeModrinthRange": "[19.0.4,20)"
   },
   "1.21.11": {
-    "project": "mc1_21_11", "minecraft": "1.21.11", "java": 21,
+    "project": "mc1_21_11", "fabricProject": "fabricMc1_21_11", "minecraft": "1.21.11", "java": 21,
     "modernGameTests": true,
     "sourceParents": ["1.21.4", "1.21.8"],
     "sourceReplacements": {
@@ -37,10 +49,14 @@
     },
     "minecraftRange": "[1.21.11,1.21.12)", "neoFloor": "21.11.42", "neoLatest": "21.11.45",
     "neoRange": "[21.11.42,21.12)", "neoCheckpoints": ["21.11.42", "21.11.45"],
-    "jadeFloor": "21.0.1+neoforge", "jadeLatest": "21.1.7+neoforge", "jadeRange": "[21.0.1,22)"
+    "jadeFloor": "21.0.1+neoforge", "jadeLatest": "21.1.7+neoforge", "jadeRange": "[21.0.1,22)",
+    "fabricLoaderFloor": "0.18.4", "fabricLoaderLatest": "0.19.5", "fabricLoaderRange": ">=0.18.4",
+    "fabricApiFloor": "0.139.4+1.21.11", "fabricApiLatest": "0.141.6+1.21.11", "fabricApiRange": "[0.139.4,1)",
+    "quiltLoaderFloor": "0.30.0", "quiltLoaderLatest": "0.30.1",
+    "fabricJadeFloor": "21.0.1+fabric", "fabricJadeLatest": "21.1.6+fabric", "fabricJadeRange": ">=21.0.1 <22", "fabricJadeModrinthRange": "[21.0.1,22)"
   },
   "26.1.2": {
-    "project": "mc26_1_2", "minecraft": "26.1.2", "java": 25,
+    "project": "mc26_1_2", "fabricProject": "fabricMc26_1_2", "minecraft": "26.1.2", "java": 25,
     "modernGameTests": true,
     "sourceParents": ["1.21.4", "1.21.8", "1.21.11"],
     "sourceReplacements": {
@@ -61,10 +77,14 @@
     },
     "minecraftRange": "[26.1.2,26.1.3)", "neoFloor": "26.1.2.71", "neoLatest": "26.1.2.100",
     "neoRange": "[26.1.2.71,26.1.3)", "neoCheckpoints": ["26.1.2.71", "26.1.2.100"],
-    "jadeFloor": "26.0.9+neoforge", "jadeLatest": "26.1.10+neoforge", "jadeRange": "[26.0.9,27)"
+    "jadeFloor": "26.0.9+neoforge", "jadeLatest": "26.1.10+neoforge", "jadeRange": "[26.0.9,27)",
+    "fabricLoaderFloor": "0.18.4", "fabricLoaderLatest": "0.19.5", "fabricLoaderRange": ">=0.18.4",
+    "fabricApiFloor": "0.145.4+26.1.2", "fabricApiLatest": "0.155.2+26.1.2", "fabricApiRange": "[0.145.4,1)",
+    "quiltSupported": false, "quiltLoaderFloor": "0.30.1", "quiltLoaderLatest": "0.30.1",
+    "fabricJadeFloor": "26.0.8+fabric", "fabricJadeLatest": "26.1.9+fabric", "fabricJadeRange": ">=26.0.8 <27", "fabricJadeModrinthRange": "[26.0.8,27)"
   },
   "26.2": {
-    "project": "mc26_2", "minecraft": "26.2", "java": 25,
+    "project": "mc26_2", "fabricProject": "fabricMc26_2", "minecraft": "26.2", "java": 25,
     "modernGameTests": true,
     "sourceParents": ["1.21.4", "1.21.8", "1.21.11", "26.1.2"],
     "sourceReplacements": {
@@ -89,6 +109,10 @@
     },
     "minecraftRange": "[26.2,26.3)", "neoFloor": "26.2.0.57", "neoLatest": "26.2.0.72",
     "neoRange": "[26.2.0.57,26.3)", "neoCheckpoints": ["26.2.0.57", "26.2.0.72"],
-    "jadeFloor": "26.2.2+neoforge", "jadeLatest": "26.2.10+neoforge", "jadeRange": "[26.2.2,27)"
+    "jadeFloor": "26.2.2+neoforge", "jadeLatest": "26.2.10+neoforge", "jadeRange": "[26.2.2,27)",
+    "fabricLoaderFloor": "0.19.0", "fabricLoaderLatest": "0.19.5", "fabricLoaderRange": ">=0.19.0",
+    "fabricApiFloor": "0.158.0+26.2", "fabricApiLatest": "0.158.0+26.2", "fabricApiRange": "[0.158.0,1)",
+    "quiltSupported": false, "quiltLoaderFloor": "0.30.1", "quiltLoaderLatest": "0.30.1",
+    "fabricJadeFloor": "26.2.1+fabric", "fabricJadeLatest": "26.2.11+fabric", "fabricJadeRange": ">=26.2.1 <27", "fabricJadeModrinthRange": "[26.2.1,27)"
   }
 }

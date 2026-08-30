@@ -29,6 +29,7 @@ public final class BetterBees {
     }
 
     private void serverStarted(ServerStartedEvent event) {
+        BetterBeesConfig.refreshSnapshot();
         LOGGER.info(
                 "Better Bees active: hive capacity={}, honey capacity={}, harvest cost={}, shears honeycomb={}-{}, indoor breeding={}, interval={} ticks, chance={}, flower scan budget={}, flower cache size={}, hive path failures={}, bee scale={}-{}.",
                 BetterBeesConfig.hiveCapacity(),
