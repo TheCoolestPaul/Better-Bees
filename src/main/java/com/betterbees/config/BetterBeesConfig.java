@@ -60,7 +60,7 @@ public final class BetterBeesConfig {
         HONEY_CAPACITY = builder
                 .comment("Maximum honey stored in vanilla beehives and bee nests.")
                 .worldRestart()
-                .defineInRange("honey_capacity", 10, 1, 64);
+                .defineInRange("honey_capacity", 20, 1, 64);
         HARVEST_COST = builder
                 .comment("Honey consumed by one successful bottle or shears harvest. Values above honey_capacity are clamped at runtime.")
                 .worldRestart()

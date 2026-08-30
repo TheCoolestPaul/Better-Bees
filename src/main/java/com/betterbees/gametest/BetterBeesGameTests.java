@@ -10,14 +10,15 @@ import com.betterbees.hive.HiveFlowerIndex;
 import com.betterbees.hive.HiveFlowerKnowledge;
 import com.betterbees.mixin.BeehiveAccessor;
 import com.betterbees.mixin.DispenserBlockAccessor;
+import com.betterbees.platform.VersionHooks;
 import com.betterbees.registry.ModMemoryTypes;
+import com.betterbees.util.BeePersistentState;
 import com.betterbees.util.BeeScaleService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -31,6 +32,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DispenserBlock;
 import net.minecraft.world.level.block.entity.BeehiveBlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.entity.DispenserBlockEntity;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -44,6 +46,8 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class BetterBeesGameTests {
     private static final BlockPos HIVE_POS = new BlockPos(1, 1, 1);
+    private static final BlockPos UPGRADE_HIVE_POS = new BlockPos(0, 200, 0);
+    private static final BlockPos UPGRADE_CHEST_POS = UPGRADE_HIVE_POS.east();
 
     private BetterBeesGameTests() {}
 
@@ -51,13 +55,13 @@ public final class BetterBeesGameTests {
     public static void beehiveAcceptsConfiguredCapacity(GameTestHelper helper) {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
         fillByEntry(helper, hive, BetterBeesConfig.hiveCapacity());
-        helper.assertValueEqual(hive.getOccupantCount(), 20, "beehive occupants");
-        helper.assertTrue(hive.isFull(), "beehive should report full at 20 occupants");
-        Bee extra = EntityType.BEE.create(helper.getLevel());
-        helper.assertTrue(extra != null, "extra bee should be constructible");
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 20, "beehive occupants");
+        VersionHooks.assertTrue(helper, hive.isFull(), "beehive should report full at 20 occupants");
+        Bee extra = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, extra != null, "extra bee should be constructible");
         hive.addOccupant(extra);
-        helper.assertValueEqual(hive.getOccupantCount(), 20, "beehive occupants after rejected entry");
-        helper.assertTrue(extra.isAlive(), "rejected bee must remain safely in the world");
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 20, "beehive occupants after rejected entry");
+        VersionHooks.assertTrue(helper, extra.isAlive(), "rejected bee must remain safely in the world");
         extra.discard();
         helper.succeed();
     }
@@ -66,8 +70,8 @@ public final class BetterBeesGameTests {
     public static void beeNestUsesSameCapacity(GameTestHelper helper) {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEE_NEST);
         fillByEntry(helper, hive, BetterBeesConfig.hiveCapacity());
-        helper.assertValueEqual(hive.getOccupantCount(), 20, "bee nest occupants");
-        helper.assertTrue(hive.isFull(), "bee nest should report full at 20 occupants");
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 20, "bee nest occupants");
+        VersionHooks.assertTrue(helper, hive.isFull(), "bee nest should report full at 20 occupants");
         helper.succeed();
     }
 
@@ -77,22 +81,22 @@ public final class BetterBeesGameTests {
         fill(helper, hive, 2);
         boolean bred = HiveBreedingService.tryBreed(helper.getLevel(), helper.absolutePos(HIVE_POS), hive,
                 helper.getLevel().random, 1.0D);
-        helper.assertTrue(bred, "forced breeding roll should succeed");
-        helper.assertValueEqual(hive.getOccupantCount(), 3, "occupants after one birth");
+        VersionHooks.assertTrue(helper, bred, "forced breeding roll should succeed");
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 3, "occupants after one birth");
         int babies = 0;
         for (BeehiveBlockEntity.Occupant occupant : ((BeehiveAccessor) hive).betterbees$getBees()) {
             Entity entity = occupant.createEntity(helper.getLevel(), helper.absolutePos(HIVE_POS));
             if (entity instanceof Bee bee && bee.isBaby()) {
                 babies++;
-                helper.assertTrue(bee.getBrain().hasMemoryValue(ModMemoryTypes.POLLINATING_COOLDOWN.get()),
+                VersionHooks.assertTrue(helper, bee.getBrain().hasMemoryValue(ModMemoryTypes.POLLINATING_COOLDOWN.get()),
                         "stored baby should have a Better Bees Brain");
                 AttributeInstance scale = bee.getAttribute(Attributes.SCALE);
-                helper.assertTrue(scale != null && scale.hasModifier(BeeScaleService.MODIFIER_ID),
+                VersionHooks.assertTrue(helper, scale != null && scale.hasModifier(BeeScaleService.MODIFIER_ID),
                         "stored baby should reconstruct with its individual scale");
             }
             if (entity != null) entity.discard();
         }
-        helper.assertValueEqual(babies, 1, "stored babies after one birth");
+        VersionHooks.assertValueEqual(helper, babies, 1, "stored babies after one birth");
         helper.succeed();
     }
 
@@ -102,8 +106,8 @@ public final class BetterBeesGameTests {
         fill(helper, hive, 1);
         boolean bred = HiveBreedingService.tryBreed(helper.getLevel(), helper.absolutePos(HIVE_POS), hive,
                 helper.getLevel().random, 1.0D);
-        helper.assertFalse(bred, "one adult must not create a baby");
-        helper.assertValueEqual(hive.getOccupantCount(), 1, "occupants after rejected breeding");
+        VersionHooks.assertFalse(helper, bred, "one adult must not create a baby");
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 1, "occupants after rejected breeding");
         helper.succeed();
     }
 
@@ -113,8 +117,8 @@ public final class BetterBeesGameTests {
         fill(helper, hive, 2);
         boolean bred = HiveBreedingService.tryBreed(helper.getLevel(), helper.absolutePos(HIVE_POS), hive,
                 helper.getLevel().random, 0.0D);
-        helper.assertFalse(bred, "zero-percent breeding roll must fail");
-        helper.assertValueEqual(hive.getOccupantCount(), 2, "occupants after failed roll");
+        VersionHooks.assertFalse(helper, bred, "zero-percent breeding roll must fail");
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 2, "occupants after failed roll");
         helper.succeed();
     }
 
@@ -124,17 +128,17 @@ public final class BetterBeesGameTests {
         fill(helper, hive, BetterBeesConfig.hiveCapacity());
         boolean bred = HiveBreedingService.tryBreed(helper.getLevel(), helper.absolutePos(HIVE_POS), hive,
                 helper.getLevel().random, 1.0D);
-        helper.assertFalse(bred, "full hive must not breed");
-        helper.assertValueEqual(hive.getOccupantCount(), 20, "occupants after full-hive roll");
+        VersionHooks.assertFalse(helper, bred, "full hive must not breed");
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 20, "occupants after full-hive roll");
         helper.succeed();
     }
 
     @GameTest(template = "empty")
     public static void ageCooldownPreventsBreeding(GameTestHelper helper) {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
-        Bee adult = EntityType.BEE.create(helper.getLevel());
-        Bee coolingDown = EntityType.BEE.create(helper.getLevel());
-        helper.assertTrue(adult != null && coolingDown != null, "parent bees should be constructible");
+        Bee adult = VersionHooks.createBee(helper.getLevel());
+        Bee coolingDown = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, adult != null && coolingDown != null, "parent bees should be constructible");
         coolingDown.setAge(100);
         hive.storeBee(BeehiveBlockEntity.Occupant.of(adult));
         hive.storeBee(BeehiveBlockEntity.Occupant.of(coolingDown));
@@ -142,7 +146,7 @@ public final class BetterBeesGameTests {
         coolingDown.discard();
         boolean bred = HiveBreedingService.tryBreed(helper.getLevel(), helper.absolutePos(HIVE_POS), hive,
                 helper.getLevel().random, 1.0D);
-        helper.assertFalse(bred, "age cooldown must make a parent ineligible");
+        VersionHooks.assertFalse(helper, bred, "age cooldown must make a parent ineligible");
         helper.succeed();
     }
 
@@ -150,19 +154,85 @@ public final class BetterBeesGameTests {
     public static void twentyOccupantsSurviveNbtRoundTrip(GameTestHelper helper) {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
         fill(helper, hive, BetterBeesConfig.hiveCapacity());
-        CompoundTag saved = hive.saveWithoutMetadata(helper.getLevel().registryAccess());
+        CompoundTag saved = VersionHooks.saveHive(hive, helper.getLevel().registryAccess());
         BeehiveBlockEntity restored = new BeehiveBlockEntity(helper.absolutePos(HIVE_POS), Blocks.BEEHIVE.defaultBlockState());
-        restored.loadWithComponents(saved, helper.getLevel().registryAccess());
-        helper.assertValueEqual(restored.getOccupantCount(), 20, "occupants after NBT round trip");
+        VersionHooks.loadHive(restored, saved, helper.getLevel().registryAccess());
+        VersionHooks.assertValueEqual(helper, restored.getOccupantCount(), 20, "occupants after NBT round trip");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void forwardUpgradeFixtureRetainsBetterBeesData(GameTestHelper helper) {
+        var level = helper.getLevel();
+        if (!(level.getBlockEntity(UPGRADE_HIVE_POS) instanceof BeehiveBlockEntity)) {
+            level.setBlock(UPGRADE_HIVE_POS, Blocks.BEEHIVE.defaultBlockState(), 3);
+            level.setBlock(UPGRADE_CHEST_POS, Blocks.CHEST.defaultBlockState(), 3);
+            BeehiveBlockEntity hive = (BeehiveBlockEntity) level.getBlockEntity(UPGRADE_HIVE_POS);
+            ChestBlockEntity chest = (ChestBlockEntity) level.getBlockEntity(UPGRADE_CHEST_POS);
+            VersionHooks.assertTrue(helper, hive != null && chest != null, "upgrade fixture block entities must be created");
+
+            HiveHoneyService.set(hive, 13);
+            for (int i = 0; i < 2; i++) {
+                Bee bee = VersionHooks.createBee(level);
+                VersionHooks.assertTrue(helper, bee != null, "upgrade fixture bee must be created");
+                BeeAi.initMemories(bee, level.random);
+                BeePersistentState state = (BeePersistentState) bee;
+                state.betterbees$restoreMemorizedHome(UPGRADE_HIVE_POS);
+                state.betterbees$setHoneyCooldown(777);
+                hive.storeBee(BeehiveBlockEntity.Occupant.of(bee));
+                bee.discard();
+            }
+
+            ItemStack hiveItem = new ItemStack(Items.BEEHIVE);
+            VersionHooks.copyHiveToItem(hive, hiveItem, level.registryAccess());
+            chest.setItem(0, hiveItem);
+            hive.setChanged();
+            chest.setChanged();
+        }
+
+        BeehiveBlockEntity persistedHive = (BeehiveBlockEntity) level.getBlockEntity(UPGRADE_HIVE_POS);
+        ChestBlockEntity persistedChest = (ChestBlockEntity) level.getBlockEntity(UPGRADE_CHEST_POS);
+        VersionHooks.assertTrue(helper, persistedHive != null && persistedChest != null,
+                "upgrade fixture must remain available after a version hop");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(persistedHive), 13,
+                "authoritative honey must survive a version hop");
+        VersionHooks.assertValueEqual(helper, persistedHive.getOccupantCount(), 2,
+                "stored occupants must survive a version hop");
+
+        ItemStack persistedItem = persistedChest.getItem(0);
+        VersionHooks.assertFalse(helper, persistedItem.isEmpty(), "silk-touch hive fixture must survive a version hop");
+        BeehiveBlockEntity itemHive = new BeehiveBlockEntity(UPGRADE_HIVE_POS, Blocks.BEEHIVE.defaultBlockState());
+        itemHive.applyComponentsFromItemStack(persistedItem);
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(itemHive), 13,
+                "hive-item honey must survive a version hop");
+        VersionHooks.assertValueEqual(helper, itemHive.getOccupantCount(), 2,
+                "hive-item occupants must survive a version hop");
+
+        for (BeehiveBlockEntity.Occupant occupant : ((BeehiveAccessor) persistedHive).betterbees$getBees()) {
+            Entity entity = occupant.createEntity(level, UPGRADE_HIVE_POS);
+            VersionHooks.assertTrue(helper, entity instanceof Bee, "stored upgrade occupant must reconstruct as a bee");
+            Bee bee = (Bee) entity;
+            BeePersistentState state = (BeePersistentState) bee;
+            VersionHooks.assertValueEqual(helper, state.betterbees$getMemorizedHome(), UPGRADE_HIVE_POS,
+                    "memorized home must survive a version hop");
+            VersionHooks.assertValueEqual(helper, state.betterbees$getHoneyCooldown(), 777,
+                    "honey cooldown must survive a version hop");
+            VersionHooks.assertTrue(helper, bee.getBrain().hasMemoryValue(ModMemoryTypes.POLLINATING_COOLDOWN.get()),
+                    "Better Bees Brain must initialize after a version hop");
+            AttributeInstance scale = bee.getAttribute(Attributes.SCALE);
+            VersionHooks.assertTrue(helper, scale != null && scale.hasModifier(BeeScaleService.MODIFIER_ID),
+                    "UUID-derived scale must initialize after a version hop");
+            bee.discard();
+        }
         helper.succeed();
     }
 
     @GameTest(template = "empty")
     public static void newBeeHasBetterBeesBrain(GameTestHelper helper) {
-        Bee bee = EntityType.BEE.create(helper.getLevel());
-        helper.assertTrue(bee != null, "bee should be constructible");
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, bee != null, "bee should be constructible");
         BeeAi.initMemories(bee, helper.getLevel().random);
-        helper.assertTrue(bee.getBrain().hasMemoryValue(ModMemoryTypes.POLLINATING_COOLDOWN.get()),
+        VersionHooks.assertTrue(helper, bee.getBrain().hasMemoryValue(ModMemoryTypes.POLLINATING_COOLDOWN.get()),
                 "Better Bees cooldown memory should be registered on the bee Brain");
         bee.discard();
         helper.succeed();
@@ -173,11 +243,11 @@ public final class BetterBeesGameTests {
         UUID sample = UUID.fromString("6f3f37a2-928d-41c6-88f6-c88ea50c34be");
         float first = BeeScaleService.scale(sample, 0.20D, 0.35D);
         float repeated = BeeScaleService.scale(sample, 0.20D, 0.35D);
-        helper.assertTrue(Float.compare(first, repeated) == 0, "one UUID must always produce the same scale");
-        helper.assertTrue(first >= 0.20F && first <= 0.35F, "default scale must remain inside its bounds");
-        helper.assertTrue(Float.compare(first, BeeScaleService.scale(sample, 0.35D, 0.20D)) == 0,
+        VersionHooks.assertTrue(helper, Float.compare(first, repeated) == 0, "one UUID must always produce the same scale");
+        VersionHooks.assertTrue(helper, first >= 0.20F && first <= 0.35F, "default scale must remain inside its bounds");
+        VersionHooks.assertTrue(helper, Float.compare(first, BeeScaleService.scale(sample, 0.35D, 0.20D)) == 0,
                 "inverted bounds must normalize to the same scale");
-        helper.assertTrue(Float.compare(1.0F, BeeScaleService.scale(sample, 1.0D, 1.0D)) == 0,
+        VersionHooks.assertTrue(helper, Float.compare(1.0F, BeeScaleService.scale(sample, 1.0D, 1.0D)) == 0,
                 "equal vanilla bounds must disable scaling");
 
         Set<Float> observed = new HashSet<>();
@@ -185,38 +255,38 @@ public final class BetterBeesGameTests {
             UUID uuid = UUID.nameUUIDFromBytes(("betterbees-scale-" + i).getBytes(StandardCharsets.UTF_8));
             observed.add(BeeScaleService.scale(uuid, 0.20D, 0.35D));
         }
-        helper.assertTrue(observed.size() > 48, "UUID mapping should produce varied individual scales");
+        VersionHooks.assertTrue(helper, observed.size() > 48, "UUID mapping should produce varied individual scales");
         helper.succeed();
     }
 
     @GameTest(template = "empty")
     public static void nativeScaleAttributeControlsPhysicalBeeSize(GameTestHelper helper) {
-        Bee bee = EntityType.BEE.create(helper.getLevel());
-        helper.assertTrue(bee != null, "bee should be constructible");
-        helper.assertTrue(BeeScaleService.apply(bee), "server should apply an individual bee scale");
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, bee != null, "bee should be constructible");
+        VersionHooks.assertTrue(helper, BeeScaleService.apply(bee), "server should apply an individual bee scale");
 
         AttributeInstance scaleAttribute = bee.getAttribute(Attributes.SCALE);
-        helper.assertTrue(scaleAttribute != null, "bee should expose the generic scale attribute");
-        helper.assertTrue(scaleAttribute.hasModifier(BeeScaleService.MODIFIER_ID),
+        VersionHooks.assertTrue(helper, scaleAttribute != null, "bee should expose the generic scale attribute");
+        VersionHooks.assertTrue(helper, scaleAttribute.hasModifier(BeeScaleService.MODIFIER_ID),
                 "individual scale should use the Better Bees transient modifier");
-        helper.assertTrue(Attributes.SCALE.value().isClientSyncable(),
+        VersionHooks.assertTrue(helper, Attributes.SCALE.value().isClientSyncable(),
                 "vanilla scale attribute must synchronize to clients");
 
         float scale = bee.getScale();
-        helper.assertTrue(scale >= BetterBeesConfig.minimumBeeScale()
+        VersionHooks.assertTrue(helper, scale >= BetterBeesConfig.minimumBeeScale()
                         && scale <= BetterBeesConfig.maximumBeeScale(),
                 "applied scale must use the effective configured range");
         float adultWidth = bee.getDimensions(Pose.STANDING).width();
         float adultHeight = bee.getDimensions(Pose.STANDING).height();
-        helper.assertTrue(Math.abs(adultWidth - bee.getType().getDimensions().width() * scale) < 0.0001F,
+        VersionHooks.assertTrue(helper, Math.abs(adultWidth - bee.getType().getDimensions().width() * scale) < 0.0001F,
                 "adult hitbox width should match the rendered scale");
-        helper.assertTrue(Math.abs(adultHeight - bee.getType().getDimensions().height() * scale) < 0.0001F,
+        VersionHooks.assertTrue(helper, Math.abs(adultHeight - bee.getType().getDimensions().height() * scale) < 0.0001F,
                 "adult hitbox height should match the rendered scale");
 
         bee.setBaby(true);
-        helper.assertTrue(Math.abs(bee.getDimensions(Pose.STANDING).width() - adultWidth * 0.5F) < 0.0001F,
+        VersionHooks.assertTrue(helper, Math.abs(bee.getDimensions(Pose.STANDING).width() - adultWidth * 0.5F) < 0.0001F,
                 "baby width should retain vanilla's additional half-size multiplier");
-        helper.assertTrue(Math.abs(bee.getDimensions(Pose.STANDING).height() - adultHeight * 0.5F) < 0.0001F,
+        VersionHooks.assertTrue(helper, Math.abs(bee.getDimensions(Pose.STANDING).height() - adultHeight * 0.5F) < 0.0001F,
                 "baby height should retain vanilla's additional half-size multiplier");
         bee.discard();
         helper.succeed();
@@ -224,21 +294,19 @@ public final class BetterBeesGameTests {
 
     @GameTest(template = "empty")
     public static void beeScaleUsesUuidWithoutPersistentModifierData(GameTestHelper helper) {
-        Bee original = EntityType.BEE.create(helper.getLevel());
-        Bee restored = EntityType.BEE.create(helper.getLevel());
-        helper.assertTrue(original != null && restored != null, "bees should be constructible");
+        Bee original = VersionHooks.createBee(helper.getLevel());
+        Bee restored = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, original != null && restored != null, "bees should be constructible");
         UUID uuid = UUID.fromString("1903c183-36f8-4778-9d81-5b88c7243379");
         original.setUUID(uuid);
         restored.setUUID(uuid);
         BeeScaleService.apply(original);
         BeeScaleService.apply(restored);
-        helper.assertTrue(Float.compare(original.getScale(), restored.getScale()) == 0,
+        VersionHooks.assertTrue(helper, Float.compare(original.getScale(), restored.getScale()) == 0,
                 "the same saved UUID must restore the same individual scale");
 
-        CompoundTag saved = new CompoundTag();
-        original.saveWithoutId(saved);
-        helper.assertFalse(saved.getList("attributes", CompoundTag.TAG_COMPOUND).toString()
-                        .contains(BeeScaleService.MODIFIER_ID.toString()),
+        CompoundTag saved = VersionHooks.saveBee(original);
+        VersionHooks.assertFalse(helper, VersionHooks.containsPersistentScaleModifier(saved),
                 "transient scale modifier must not be written to entity or hive NBT");
         original.discard();
         restored.discard();
@@ -251,13 +319,15 @@ public final class BetterBeesGameTests {
             BeehiveBlockEntity hive = placeHive(helper, block);
             HiveHoneyService.set(hive, 0);
             for (int i = 0; i < BetterBeesConfig.honeyCapacity(); i++) {
-                helper.assertTrue(HiveHoneyService.add(helper.getLevel(), helper.absolutePos(HIVE_POS), 1),
+                VersionHooks.assertTrue(helper, HiveHoneyService.add(helper.getLevel(), helper.absolutePos(HIVE_POS), 1),
                         "honey deposit should fit below capacity");
             }
-            helper.assertValueEqual(HiveHoneyService.get(hive), 10, "stored honey at default capacity");
-            helper.assertFalse(HiveHoneyService.add(helper.getLevel(), helper.absolutePos(HIVE_POS), 1),
+            VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), BetterBeesConfig.honeyCapacity(),
+                    "stored honey at configured capacity");
+            VersionHooks.assertFalse(helper, HiveHoneyService.add(helper.getLevel(), helper.absolutePos(HIVE_POS), 1),
                     "deposit above honey capacity must fail");
-            helper.assertValueEqual(HiveHoneyService.get(hive), 10, "stored honey after rejected deposit");
+            VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), BetterBeesConfig.honeyCapacity(),
+                    "stored honey after rejected deposit");
         }
         helper.succeed();
     }
@@ -266,9 +336,9 @@ public final class BetterBeesGameTests {
     public static void harvestCostConsumesExactlyOneHoney(GameTestHelper helper) {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
         HiveHoneyService.set(hive, 1);
-        helper.assertTrue(HiveHoneyService.consume(hive), "one stored honey should be harvestable");
-        helper.assertValueEqual(HiveHoneyService.get(hive), 0, "honey after one harvest");
-        helper.assertFalse(HiveHoneyService.consume(hive), "empty hive must not be harvestable");
+        VersionHooks.assertTrue(helper, HiveHoneyService.consume(hive), "one stored honey should be harvestable");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), 0, "honey after one harvest");
+        VersionHooks.assertFalse(helper, HiveHoneyService.consume(hive), "empty hive must not be harvestable");
         helper.succeed();
     }
 
@@ -276,10 +346,10 @@ public final class BetterBeesGameTests {
     public static void honeySurvivesNbtRoundTrip(GameTestHelper helper) {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
         HiveHoneyService.set(hive, 9);
-        CompoundTag saved = hive.saveWithoutMetadata(helper.getLevel().registryAccess());
+        CompoundTag saved = VersionHooks.saveHive(hive, helper.getLevel().registryAccess());
         BeehiveBlockEntity restored = new BeehiveBlockEntity(helper.absolutePos(HIVE_POS), Blocks.BEEHIVE.defaultBlockState());
-        restored.loadWithComponents(saved, helper.getLevel().registryAccess());
-        helper.assertValueEqual(HiveHoneyService.get(restored), 9, "honey after NBT round trip");
+        VersionHooks.loadHive(restored, saved, helper.getLevel().registryAccess());
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(restored), 9, "honey after NBT round trip");
         helper.succeed();
     }
 
@@ -287,20 +357,20 @@ public final class BetterBeesGameTests {
     public static void legacyHoneyMigratesOneForOne(GameTestHelper helper) {
         BeehiveBlockEntity legacy = new BeehiveBlockEntity(helper.absolutePos(HIVE_POS),
                 Blocks.BEEHIVE.defaultBlockState().setValue(net.minecraft.world.level.block.BeehiveBlock.HONEY_LEVEL, 5));
-        helper.assertValueEqual(HiveHoneyService.get(legacy), 5, "legacy vanilla honey level");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(legacy), 5, "legacy vanilla honey level");
         helper.succeed();
     }
 
     @GameTest(template = "empty")
     public static void defaultHoneyScalingMatchesPlan(GameTestHelper helper) {
-        int[] display = {0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5};
-        for (int honey = 0; honey <= 10; honey++) {
-            helper.assertValueEqual(HiveHoneyService.scaled(honey, 10, 5), display[honey],
+        int[] display = {0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5};
+        for (int honey = 0; honey <= 20; honey++) {
+            VersionHooks.assertValueEqual(helper, HiveHoneyService.scaled(honey, 20, 5), display[honey],
                     "display proxy for honey " + honey);
         }
-        helper.assertValueEqual(HiveHoneyService.scaled(0, 10, 15), 0, "empty comparator signal");
-        helper.assertValueEqual(HiveHoneyService.scaled(5, 10, 15), 8, "half-full comparator signal");
-        helper.assertValueEqual(HiveHoneyService.scaled(10, 10, 15), 15, "full comparator signal");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.scaled(0, 20, 15), 0, "empty comparator signal");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.scaled(10, 20, 15), 8, "half-full comparator signal");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.scaled(20, 20, 15), 15, "full comparator signal");
         helper.succeed();
     }
 
@@ -308,7 +378,7 @@ public final class BetterBeesGameTests {
     public static void honeycombRollStaysWithinConfiguredRange(GameTestHelper helper) {
         for (int i = 0; i < 256; i++) {
             int count = HiveHoneyService.randomHoneycombCount(helper.getLevel().random);
-            helper.assertTrue(count >= BetterBeesConfig.shearsHoneycombMin()
+            VersionHooks.assertTrue(helper, count >= BetterBeesConfig.shearsHoneycombMin()
                             && count <= BetterBeesConfig.shearsHoneycombMax(),
                     "honeycomb roll must stay inside configured bounds");
         }
@@ -322,8 +392,8 @@ public final class BetterBeesGameTests {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(Items.GLASS_BOTTLE));
         helper.useBlock(HIVE_POS, player);
-        helper.assertTrue(player.getMainHandItem().is(Items.HONEY_BOTTLE), "bottle harvest should produce one honey bottle");
-        helper.assertValueEqual(HiveHoneyService.get(hive), 0, "honey after bottle harvest");
+        VersionHooks.assertTrue(helper, player.getMainHandItem().is(Items.HONEY_BOTTLE), "bottle harvest should produce one honey bottle");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), 0, "honey after bottle harvest");
         helper.succeed();
     }
 
@@ -337,9 +407,9 @@ public final class BetterBeesGameTests {
         ItemStack shears = new ItemStack(Items.SHEARS);
         player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, shears);
         helper.useBlock(HIVE_POS, player);
-        helper.assertValueEqual(HiveHoneyService.get(hive), 1, "honey after shears harvest");
-        helper.assertValueEqual(hive.getOccupantCount(), 2, "smoked hive occupants");
-        helper.assertValueEqual(shears.getDamageValue(), 1, "shears durability used");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), 1, "honey after shears harvest");
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 2, "smoked hive occupants");
+        VersionHooks.assertValueEqual(helper, shears.getDamageValue(), 1, "shears durability used");
         helper.succeed();
     }
 
@@ -351,8 +421,8 @@ public final class BetterBeesGameTests {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(Items.SHEARS));
         helper.useBlock(HIVE_POS, player);
-        helper.assertValueEqual(HiveHoneyService.get(hive), 3, "unsafe harvest must only consume its cost");
-        helper.assertValueEqual(hive.getOccupantCount(), 0, "unsafe harvest should release occupants");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), 3, "unsafe harvest must only consume its cost");
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 0, "unsafe harvest should release occupants");
         helper.succeed();
     }
 
@@ -361,10 +431,10 @@ public final class BetterBeesGameTests {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
         HiveHoneyService.set(hive, 9);
         ItemStack hiveItem = new ItemStack(Items.BEEHIVE);
-        hive.saveToItem(hiveItem, helper.getLevel().registryAccess());
+        VersionHooks.copyHiveToItem(hive, hiveItem, helper.getLevel().registryAccess());
         BeehiveBlockEntity restored = new BeehiveBlockEntity(helper.absolutePos(HIVE_POS), Blocks.BEEHIVE.defaultBlockState());
         restored.applyComponentsFromItemStack(hiveItem);
-        helper.assertValueEqual(HiveHoneyService.get(restored), 9, "honey restored from hive item component");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(restored), 9, "honey restored from hive item component");
         helper.succeed();
     }
 
@@ -374,13 +444,13 @@ public final class BetterBeesGameTests {
         HiveHoneyService.set(hive, 1);
         BlockPos dispenserPos = HIVE_POS.south();
         helper.setBlock(dispenserPos, Blocks.DISPENSER.defaultBlockState().setValue(DispenserBlock.FACING, Direction.NORTH));
-        DispenserBlockEntity dispenser = helper.getBlockEntity(dispenserPos);
+        DispenserBlockEntity dispenser = VersionHooks.getBlockEntity(helper, dispenserPos, DispenserBlockEntity.class);
         dispenser.setItem(0, new ItemStack(Items.SHEARS));
         BlockPos absoluteDispenserPos = helper.absolutePos(dispenserPos);
         ((DispenserBlockAccessor) Blocks.DISPENSER).betterbees$dispenseFrom(
                 helper.getLevel(), helper.getLevel().getBlockState(absoluteDispenserPos), absoluteDispenserPos);
-        helper.assertValueEqual(HiveHoneyService.get(hive), 0, "honey after dispenser shearing");
-        helper.assertValueEqual(dispenser.getItem(0).getDamageValue(), 1, "dispenser shears durability used");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), 0, "honey after dispenser shearing");
+        VersionHooks.assertValueEqual(helper, dispenser.getItem(0).getDamageValue(), 1, "dispenser shears durability used");
         helper.succeed();
     }
 
@@ -390,14 +460,14 @@ public final class BetterBeesGameTests {
         HiveFlowerIndex index = ((HiveFlowerKnowledge) hive).betterbees$getFlowerIndex();
         BlockPos absoluteHive = helper.absolutePos(HIVE_POS);
         for (int i = 0; i < 20; i++) {
-            Bee bee = EntityType.BEE.create(helper.getLevel());
-            helper.assertTrue(bee != null, "searching bee should be constructible");
-            bee.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
+            Bee bee = VersionHooks.createBee(helper.getLevel());
+            VersionHooks.assertTrue(helper, bee != null, "searching bee should be constructible");
+            VersionHooks.moveTo(bee, absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
             index.request(helper.getLevel(), absoluteHive, bee, 0);
             bee.discard();
         }
         index.tick(helper.getLevel(), absoluteHive);
-        helper.assertTrue(index.lastTickChecks() <= BetterBeesConfig.flowerScanBudget(),
+        VersionHooks.assertTrue(helper, index.lastTickChecks() <= BetterBeesConfig.flowerScanBudget(),
                 "twenty requests must share one per-hive scan budget");
         helper.succeed();
     }
@@ -409,32 +479,32 @@ public final class BetterBeesGameTests {
         BlockPos absoluteHive = helper.absolutePos(HIVE_POS);
         helper.setBlock(HIVE_POS.east(), Blocks.DANDELION);
         helper.setBlock(HIVE_POS.west(), Blocks.DANDELION);
-        Bee first = EntityType.BEE.create(helper.getLevel());
-        Bee second = EntityType.BEE.create(helper.getLevel());
-        helper.assertTrue(first != null && second != null, "searching bees should be constructible");
-        first.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
-        second.moveTo(first.getX(), first.getY(), first.getZ());
+        Bee first = VersionHooks.createBee(helper.getLevel());
+        Bee second = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, first != null && second != null, "searching bees should be constructible");
+        VersionHooks.moveTo(first, absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
+        VersionHooks.moveTo(second, first.getX(), first.getY(), first.getZ());
         index.request(helper.getLevel(), absoluteHive, first, 0);
         index.tick(helper.getLevel(), absoluteHive);
         HiveFlowerIndex.Request firstRequest = index.request(helper.getLevel(), absoluteHive, first, 0);
         HiveFlowerIndex.Request secondRequest = index.request(helper.getLevel(), absoluteHive, second, 0);
-        helper.assertTrue(firstRequest.status() == HiveFlowerIndex.Status.FOUND
+        VersionHooks.assertTrue(helper, firstRequest.status() == HiveFlowerIndex.Status.FOUND
                         && secondRequest.status() == HiveFlowerIndex.Status.FOUND,
                 "one hive scan should make cached flowers available to every nestmate");
-        helper.assertFalse(firstRequest.flower().equals(secondRequest.flower()),
+        VersionHooks.assertFalse(helper, firstRequest.flower().equals(secondRequest.flower()),
                 "soft reservations should spread equally placed bees across available flowers");
-        helper.assertValueEqual(index.reservationCount(firstRequest.flower()), 1,
+        VersionHooks.assertValueEqual(helper, index.reservationCount(firstRequest.flower()), 1,
                 "first flower reservation count");
-        helper.assertValueEqual(index.reservationCount(secondRequest.flower()), 1,
+        VersionHooks.assertValueEqual(helper, index.reservationCount(secondRequest.flower()), 1,
                 "second flower reservation count");
         index.release(first.getUUID());
-        helper.assertValueEqual(index.reservationCount(firstRequest.flower()), 0,
+        VersionHooks.assertValueEqual(helper, index.reservationCount(firstRequest.flower()), 0,
                 "released reservation count");
         index.invalidate(secondRequest.flower());
-        helper.assertValueEqual(index.reservationCount(secondRequest.flower()), 0,
+        VersionHooks.assertValueEqual(helper, index.reservationCount(secondRequest.flower()), 0,
                 "invalidated flower reservation count");
         index.tick(helper.getLevel(), absoluteHive);
-        helper.assertValueEqual(index.lastTickChecks(), 0,
+        VersionHooks.assertValueEqual(helper, index.lastTickChecks(), 0,
                 "scanner should pause after every requester receives a flower");
         first.discard();
         second.discard();
@@ -445,27 +515,27 @@ public final class BetterBeesGameTests {
     public static void collectiveFlowerScanPausesAfterCompletedMiss(GameTestHelper helper) {
         HiveFlowerIndex index = new HiveFlowerIndex();
         BlockPos absoluteHive = helper.absolutePos(HIVE_POS);
-        Bee bee = EntityType.BEE.create(helper.getLevel());
-        helper.assertTrue(bee != null, "searching bee should be constructible");
-        bee.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, bee != null, "searching bee should be constructible");
+        VersionHooks.moveTo(bee, absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
         index.request(helper.getLevel(), absoluteHive, bee, 0);
 
         for (int tick = 0; tick < 3_000 && index.completedGeneration() == 0; tick++) {
             index.tick(helper.getLevel(), absoluteHive);
         }
-        helper.assertTrue(index.completedGeneration() > 0L, "flower generation should complete");
-        helper.assertValueEqual(index.activeDemandCount(), 0, "demand after completed generation");
-        helper.assertValueEqual(index.lastTickGenerationCompletions(), 1,
+        VersionHooks.assertTrue(helper, index.completedGeneration() > 0L, "flower generation should complete");
+        VersionHooks.assertValueEqual(helper, index.activeDemandCount(), 0, "demand after completed generation");
+        VersionHooks.assertValueEqual(helper, index.lastTickGenerationCompletions(), 1,
                 "generation completion diagnostic");
         index.tick(helper.getLevel(), absoluteHive);
-        helper.assertValueEqual(index.lastTickChecks(), 0, "completed miss must pause scanning");
+        VersionHooks.assertValueEqual(helper, index.lastTickChecks(), 0, "completed miss must pause scanning");
 
         HiveFlowerIndex.Request miss = index.request(helper.getLevel(), absoluteHive, bee, 0);
-        helper.assertTrue(miss.status() == HiveFlowerIndex.Status.COMPLETE_MISS,
+        VersionHooks.assertTrue(helper, miss.status() == HiveFlowerIndex.Status.COMPLETE_MISS,
                 "requester should acknowledge the completed miss");
         index.request(helper.getLevel(), absoluteHive, bee, miss.completedGeneration());
         index.tick(helper.getLevel(), absoluteHive);
-        helper.assertTrue(index.lastTickChecks() > 0, "renewed demand should resume scanning");
+        VersionHooks.assertTrue(helper, index.lastTickChecks() > 0, "renewed demand should resume scanning");
         bee.discard();
         helper.succeed();
     }
@@ -474,12 +544,12 @@ public final class BetterBeesGameTests {
     public static void nonFlowersUseOneConstantTimeCacheProbe(GameTestHelper helper) {
         HiveFlowerIndex index = new HiveFlowerIndex();
         BlockPos absoluteHive = helper.absolutePos(HIVE_POS);
-        Bee bee = EntityType.BEE.create(helper.getLevel());
-        helper.assertTrue(bee != null, "searching bee should be constructible");
-        bee.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, bee != null, "searching bee should be constructible");
+        VersionHooks.moveTo(bee, absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
         index.request(helper.getLevel(), absoluteHive, bee, 0);
         index.tick(helper.getLevel(), absoluteHive);
-        helper.assertValueEqual(index.lastTickCacheProbes(), index.lastTickChecks(),
+        VersionHooks.assertValueEqual(helper, index.lastTickCacheProbes(), index.lastTickChecks(),
                 "each loaded non-flower should use exactly one membership probe");
         bee.discard();
         helper.succeed();
@@ -491,15 +561,15 @@ public final class BetterBeesGameTests {
         int totalChecks = 0;
         for (int i = 0; i < 100; i++) {
             HiveFlowerIndex index = new HiveFlowerIndex();
-            Bee bee = EntityType.BEE.create(helper.getLevel());
-            helper.assertTrue(bee != null, "searching bee should be constructible");
-            bee.moveTo(absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
+            Bee bee = VersionHooks.createBee(helper.getLevel());
+            VersionHooks.assertTrue(helper, bee != null, "searching bee should be constructible");
+            VersionHooks.moveTo(bee, absoluteHive.getX() + 0.5D, absoluteHive.getY(), absoluteHive.getZ() + 0.5D);
             index.request(helper.getLevel(), absoluteHive, bee, 0);
             index.tick(helper.getLevel(), absoluteHive);
             totalChecks += index.lastTickChecks();
             bee.discard();
         }
-        helper.assertTrue(totalChecks <= 100 * BetterBeesConfig.flowerScanBudget(),
+        VersionHooks.assertTrue(helper, totalChecks <= 100 * BetterBeesConfig.flowerScanBudget(),
                 "one hundred active hive indexes must respect the aggregate scan ceiling");
         helper.succeed();
     }
@@ -511,22 +581,22 @@ public final class BetterBeesGameTests {
         fill(helper, hive, BetterBeesConfig.hiveCapacity());
 
         HiveOverlayData data = HiveOverlayData.from(hive);
-        helper.assertValueEqual(data.honey(), 7, "overlay honey");
-        helper.assertValueEqual(data.honeyCapacity(), BetterBeesConfig.honeyCapacity(), "overlay honey capacity");
-        helper.assertValueEqual(data.bees(), BetterBeesConfig.hiveCapacity(), "overlay occupants");
-        helper.assertValueEqual(data.beeCapacity(), BetterBeesConfig.hiveCapacity(), "overlay bee capacity");
+        VersionHooks.assertValueEqual(helper, data.honey(), 7, "overlay honey");
+        VersionHooks.assertValueEqual(helper, data.honeyCapacity(), BetterBeesConfig.honeyCapacity(), "overlay honey capacity");
+        VersionHooks.assertValueEqual(helper, data.bees(), BetterBeesConfig.hiveCapacity(), "overlay occupants");
+        VersionHooks.assertValueEqual(helper, data.beeCapacity(), BetterBeesConfig.hiveCapacity(), "overlay bee capacity");
         helper.succeed();
     }
 
     private static BeehiveBlockEntity placeHive(GameTestHelper helper, Block block) {
         helper.setBlock(HIVE_POS, block);
-        return helper.getBlockEntity(HIVE_POS);
+        return VersionHooks.getBlockEntity(helper, HIVE_POS, BeehiveBlockEntity.class);
     }
 
     private static void fill(GameTestHelper helper, BeehiveBlockEntity hive, int count) {
         for (int i = 0; i < count; i++) {
-            Bee bee = EntityType.BEE.create(helper.getLevel());
-            helper.assertTrue(bee != null, "bee should be constructible");
+            Bee bee = VersionHooks.createBee(helper.getLevel());
+            VersionHooks.assertTrue(helper, bee != null, "bee should be constructible");
             hive.storeBee(BeehiveBlockEntity.Occupant.of(bee));
             bee.discard();
         }
@@ -534,8 +604,8 @@ public final class BetterBeesGameTests {
 
     private static void fillByEntry(GameTestHelper helper, BeehiveBlockEntity hive, int count) {
         for (int i = 0; i < count; i++) {
-            Bee bee = EntityType.BEE.create(helper.getLevel());
-            helper.assertTrue(bee != null, "bee should be constructible");
+            Bee bee = VersionHooks.createBee(helper.getLevel());
+            VersionHooks.assertTrue(helper, bee != null, "bee should be constructible");
             hive.addOccupant(bee);
         }
     }

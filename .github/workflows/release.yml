@@ -1,5 +1,4 @@
 name: Release
-
 on:
   workflow_dispatch:
     inputs:
@@ -10,471 +9,310 @@ on:
         type: choice
         options: [current, patch, minor, major, custom]
       custom_version:
-        description: Strict SemVer used only when Version to release is custom
+        description: Strict SemVer used only for custom
         required: false
         type: string
-
-permissions:
-  contents: read
-
-concurrency:
-  group: release-main
-  cancel-in-progress: false
+permissions: { contents: read }
+concurrency: { group: release-main, cancel-in-progress: false }
 
 jobs:
-  resolve_version:
-    name: Resolve release version
+  resolve:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     outputs:
-      source_sha: ${{ steps.source.outputs.sha }}
-      current_version: ${{ steps.version.outputs.current_version }}
-      last_release: ${{ steps.version.outputs.last_release }}
-      release_version: ${{ steps.version.outputs.release_version }}
+      sha: ${{ steps.source.outputs.sha }}
+      current: ${{ steps.version.outputs.current_version }}
+      version: ${{ steps.version.outputs.release_version }}
       tag: ${{ steps.version.outputs.tag }}
-      jar_name: ${{ steps.version.outputs.jar_name }}
-      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
-      modrinth_version_type: ${{ steps.version.outputs.modrinth_version_type }}
+      prerelease: ${{ steps.version.outputs.is_prerelease }}
+      modrinth_type: ${{ steps.version.outputs.modrinth_version_type }}
     steps:
-      - name: Checkout main
-        uses: actions/checkout@v7
-        with:
-          ref: main
-
-      - name: Record tested source
-        id: source
+      - uses: actions/checkout@v7
+        with: { ref: main }
+      - id: source
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Find last published release
-        id: history
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        shell: bash
+      - id: history
+        env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}' }
         run: |
-          set -euo pipefail
-          releases="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
-            --jq '.[] | select(.draft == false) | [.published_at, .tag_name] | @tsv')"
-          latest="$(printf '%s\n' "$releases" | sort --reverse | sed -n '1p')"
-          tag="${latest#*$'\t'}"
-          if [[ -z "$tag" ]]; then
-            echo "version=none" >> "$GITHUB_OUTPUT"
-          elif [[ "$tag" =~ ^v(.+)$ ]]; then
-            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          else
-            echo "Latest published release tag must start with v: $tag" >&2
-            exit 1
-          fi
-
-      - name: Resolve requested version
-        id: version
+          tag="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '[.[] | select(.draft == false)] | sort_by(.published_at) | last | .tag_name // ""')"
+          [[ -z "$tag" ]] && echo version=none >> "$GITHUB_OUTPUT" || echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+      - id: version
         env:
           RELEASE_MODE: ${{ inputs.release_mode }}
           CUSTOM_VERSION: ${{ inputs.custom_version }}
           LAST_RELEASE: ${{ steps.history.outputs.version }}
-        shell: bash
-        run: |
-          python3 scripts/ci/resolve-version.py \
-            --mode "$RELEASE_MODE" \
-            --custom-version "$CUSTOM_VERSION" \
-            --last-release "$LAST_RELEASE" \
-            --github-output "$GITHUB_OUTPUT"
-
-      - name: Publish version summary
-        shell: bash
-        run: |
-          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+        run: python3 scripts/ci/resolve-version.py --mode "$RELEASE_MODE" --custom-version "$CUSTOM_VERSION" --last-release "$LAST_RELEASE" --github-output "$GITHUB_OUTPUT"
+      - run: python3 scripts/ci/test-resolve-version.py
+      - run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           # Better Bees release
 
-          ```text
+          \`\`\`text
           Current project version: ${{ steps.version.outputs.current_version }}
           Last published release: ${{ steps.version.outputs.last_release }}
           Requested mode: ${{ inputs.release_mode }}
           Release version: ${{ steps.version.outputs.release_version }}
           Tag: ${{ steps.version.outputs.tag }}
-          ```
-
-          Validation must complete before the repository, tag, or release is changed.
-          SUMMARY
-
-      - name: Test version resolver
-        run: python3 scripts/ci/test-resolve-version.py
-
-      - name: Test and validate Modrinth metadata
-        shell: bash
-        run: |
-          set -euo pipefail
-          jade_range="$(sed -n 's/^jade_version_range=//p' gradle.properties | tail -n 1 | tr -d '\r')"
-          python3 scripts/ci/test-validate-modrinth-release.py
-          python3 scripts/ci/validate-modrinth-release.py \
-            --manifest .github/modrinth-dependencies.json \
-            --jade-version-range "$jade_range" \
-            --expected-version '${{ steps.version.outputs.release_version }}' \
-            --game-version 1.21.1 \
-            --version-type '${{ steps.version.outputs.modrinth_version_type }}'
+          \`\`\`
+          EOF
 
   compatibility:
-    name: GameTests / NeoForge ${{ matrix.neo_version }}
-    needs: resolve_version
+    needs: resolve
+    name: GameTests ${{ matrix.target.minecraft }} / ${{ matrix.target.neo }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        neo_version: ['21.1.1', '21.1.50', '21.1.213', '21.1.248']
+        target:
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.1', java: '21' }
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.50', java: '21' }
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.213', java: '21' }
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.249', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.121', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.157', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.9', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.54', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.42', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.45', java: '21' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.71', java: '25' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.100', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.57', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.72', java: '25' }
     steps:
-      - name: Checkout tested source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve_version.outputs.source_sha }}
-      - name: Apply release version
-        env:
-          VERSION: ${{ needs.resolve_version.outputs.release_version }}
-        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: temurin
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-      - name: Build and run GameTests
-        run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo_version }} build runGameTestServer
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - run: sed -i 's/^mod_version=.*/mod_version=${{ needs.resolve.outputs.version }}/' gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.target.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon -Pneo_version=${{ matrix.target.neo }} :${{ matrix.target.project }}:build :${{ matrix.target.project }}:runGameTestServer
+
+  jade:
+    needs: resolve
+    name: Jade ${{ matrix.target.jade }} / MC ${{ matrix.target.minecraft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.1', jade: '15.1.6+neoforge', java: '21' }
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.249', jade: '15.10.6+neoforge', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.121', jade: '17.0.1+neoforge', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.157', jade: '17.3.0+neoforge', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.9', jade: '19.0.4+neoforge', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.54', jade: '19.3.1+neoforge', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.42', jade: '21.0.1+neoforge', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.45', jade: '21.1.7+neoforge', java: '21' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.71', jade: '26.0.9+neoforge', java: '25' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.100', jade: '26.1.10+neoforge', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.57', jade: '26.2.2+neoforge', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.72', jade: '26.2.10+neoforge', java: '25' }
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - run: sed -i 's/^mod_version=.*/mod_version=${{ needs.resolve.outputs.version }}/' gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.target.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon -Pneo_version=${{ matrix.target.neo }} -Pjade_version=${{ matrix.target.jade }} -PwithJade=true :${{ matrix.target.project }}:build :${{ matrix.target.project }}:runGameTestServer
 
   smoke:
-    name: ${{ matrix.mode }} smoke / NeoForge ${{ matrix.neo_version }}
-    needs: resolve_version
+    needs: resolve
+    name: ${{ matrix.mode }} ${{ matrix.target.minecraft }} Jade=${{ matrix.jade }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         mode: [server, client]
-        neo_version: ['21.1.1', '21.1.248']
+        jade: [false, true]
+        target:
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.1', jade_version: '15.1.6+neoforge', java: '21' }
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.249', jade_version: '15.10.6+neoforge', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.121', jade_version: '17.0.1+neoforge', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.157', jade_version: '17.3.0+neoforge', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.9', jade_version: '19.0.4+neoforge', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.54', jade_version: '19.3.1+neoforge', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.42', jade_version: '21.0.1+neoforge', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.45', jade_version: '21.1.7+neoforge', java: '21' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.71', jade_version: '26.0.9+neoforge', java: '25' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.100', jade_version: '26.1.10+neoforge', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.57', jade_version: '26.2.2+neoforge', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.72', jade_version: '26.2.10+neoforge', java: '25' }
     steps:
-      - name: Checkout tested source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve_version.outputs.source_sha }}
-      - name: Apply release version
-        env:
-          VERSION: ${{ needs.resolve_version.outputs.release_version }}
-        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: temurin
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-      - name: Install headless client dependencies
-        if: matrix.mode == 'client'
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - run: sed -i 's/^mod_version=.*/mod_version=${{ needs.resolve.outputs.version }}/' gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.target.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - if: matrix.mode == 'client'
         run: sudo apt-get update && sudo apt-get install --yes xvfb libgl1-mesa-dri
-      - name: Smoke-launch ${{ matrix.mode }}
-        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.neo_version }}
+      - if: matrix.jade == false
+        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.target.project }} ${{ matrix.target.neo }}
+      - if: matrix.jade == true
+        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.target.project }} ${{ matrix.target.neo }} -PwithJade=true -Pjade_version=${{ matrix.target.jade_version }}
 
-  jade_compatibility:
-    name: Jade ${{ matrix.jade_version }} / NeoForge ${{ matrix.neo_version }}
-    needs: resolve_version
+  world_upgrade:
+    needs: resolve
+    name: Sequential world upgrade
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - neo_version: '21.1.1'
-            jade_version: '15.1.6+neoforge'
-          - neo_version: '21.1.248'
-            jade_version: '15.10.6+neoforge'
+    timeout-minutes: 45
     steps:
-      - name: Checkout tested source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve_version.outputs.source_sha }}
-      - name: Apply release version
-        env:
-          VERSION: ${{ needs.resolve_version.outputs.release_version }}
-        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: temurin
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-      - name: Build and run GameTests with Jade
-        run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo_version }} -PwithJade=true -Pjade_version=${{ matrix.jade_version }} build runGameTestServer
-
-  jade_smoke:
-    name: Jade ${{ matrix.mode }} smoke / NeoForge ${{ matrix.neo_version }}
-    needs: resolve_version
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - mode: server
-            neo_version: '21.1.1'
-            jade_version: '15.1.6+neoforge'
-          - mode: client
-            neo_version: '21.1.1'
-            jade_version: '15.1.6+neoforge'
-          - mode: server
-            neo_version: '21.1.248'
-            jade_version: '15.10.6+neoforge'
-          - mode: client
-            neo_version: '21.1.248'
-            jade_version: '15.10.6+neoforge'
-    steps:
-      - name: Checkout tested source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve_version.outputs.source_sha }}
-      - name: Apply release version
-        env:
-          VERSION: ${{ needs.resolve_version.outputs.release_version }}
-        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: temurin
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-      - name: Install headless client dependencies
-        if: matrix.mode == 'client'
-        run: sudo apt-get update && sudo apt-get install --yes xvfb libgl1-mesa-dri
-      - name: Smoke-launch ${{ matrix.mode }} with Jade
-        run: bash scripts/ci/smoke-launch.sh ${{ matrix.mode }} ${{ matrix.neo_version }} -PwithJade=true -Pjade_version=${{ matrix.jade_version }}
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - run: sed -i 's/^mod_version=.*/mod_version=${{ needs.resolve.outputs.version }}/' gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '25', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: bash scripts/ci/world-upgrade.sh "$RUNNER_TEMP/betterbees-upgrade-world"
 
   package:
-    name: Package release candidate
-    needs: [resolve_version, compatibility, smoke, jade_compatibility, jade_smoke]
+    needs: [resolve, compatibility, jade, smoke, world_upgrade]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
-      - name: Checkout tested source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve_version.outputs.source_sha }}
-      - name: Apply release version
-        env:
-          VERSION: ${{ needs.resolve_version.outputs.release_version }}
-        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: temurin
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-      - name: Build against the minimum NeoForge version
-        run: ./gradlew --no-daemon -Pneo_version=21.1.1 clean build
-      - name: Verify release jar
-        run: bash scripts/ci/verify-jar.sh "build/libs/${{ needs.resolve_version.outputs.jar_name }}" '${{ needs.resolve_version.outputs.release_version }}'
-      - name: Generate and verify SHA-256 checksum
-        working-directory: build/libs
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - run: sed -i 's/^mod_version=.*/mod_version=${{ needs.resolve.outputs.version }}/' gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '25', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon clean assemble
+      - name: Verify and checksum all target jars
+        env: { VERSION: '${{ needs.resolve.outputs.version }}' }
         run: |
-          sha256sum "${{ needs.resolve_version.outputs.jar_name }}" > "${{ needs.resolve_version.outputs.jar_name }}.sha256"
-          sha256sum --check "${{ needs.resolve_version.outputs.jar_name }}.sha256"
-      - name: Upload validated package
-        uses: actions/upload-artifact@v7
+          mkdir release-assets
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          targets=json.load(open('gradle/targets.json'))
+          version=os.environ['VERSION']
+          out=pathlib.Path('release-assets')
+          for mc,t in targets.items():
+              name=f'betterbees-{version}-neoforge-{mc}.jar'
+              source=pathlib.Path('versions')/mc/'build/libs'/name
+              dest=out/name
+              dest.write_bytes(source.read_bytes())
+              subprocess.run(['bash','scripts/ci/verify-jar.sh',str(dest),version,mc,str(t['java']),t['neoRange'],t['minecraftRange'],t['jadeRange']],check=True)
+          PY
+          cd release-assets
+          sha256sum *.jar > SHA256SUMS
+          while read -r hash file; do printf '%s  %s\n' "$hash" "$file" > "$file.sha256"; done < SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - uses: actions/upload-artifact@v7
         with:
-          name: betterbees-${{ needs.resolve_version.outputs.release_version }}-validated
-          path: |
-            build/libs/${{ needs.resolve_version.outputs.jar_name }}
-            build/libs/${{ needs.resolve_version.outputs.jar_name }}.sha256
-          if-no-files-found: error
+          name: betterbees-${{ needs.resolve.outputs.version }}-validated
+          path: release-assets/*
           retention-days: 14
+          if-no-files-found: error
           overwrite: true
 
-  publish:
-    name: Commit, tag, and publish
-    needs: [resolve_version, package]
+  publish_github:
+    needs: [resolve, package]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
+    permissions: { contents: write }
+    outputs: { commit: '${{ steps.git.outputs.commit }}' }
     steps:
-      - name: Checkout tested source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve_version.outputs.source_sha }}
-          fetch-depth: 0
-      - name: Download validated package
-        uses: actions/download-artifact@v8
-        with:
-          name: betterbees-${{ needs.resolve_version.outputs.release_version }}-validated
-          path: release-assets
-      - name: Verify downloaded checksum
-        working-directory: release-assets
-        run: sha256sum --check '${{ needs.resolve_version.outputs.jar_name }}.sha256'
-      - name: Verify main is still the tested commit
-        env:
-          SOURCE_SHA: ${{ needs.resolve_version.outputs.source_sha }}
-        shell: bash
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}', fetch-depth: 0 }
+      - uses: actions/download-artifact@v8
+        with: { name: 'betterbees-${{ needs.resolve.outputs.version }}-validated', path: release-assets }
+      - name: Commit version and tag
+        id: git
+        env: { VERSION: '${{ needs.resolve.outputs.version }}', TAG: '${{ needs.resolve.outputs.tag }}', SHA: '${{ needs.resolve.outputs.sha }}' }
         run: |
           set -euo pipefail
-          remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
-          if [[ "$remote_main" != "$SOURCE_SHA" ]]; then
-            echo "main changed from tested commit $SOURCE_SHA to $remote_main; start a fresh release run" >&2
-            exit 1
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$SHA" ]] || { echo 'main changed; rerun release' >&2; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
+          if ! git diff --quiet; then git add gradle.properties && git commit -m "Release $VERSION"; fi
+          commit="$(git rev-parse HEAD)"
+          existing="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
+          if [[ -n "$existing" && "$existing" != "$commit" ]]; then echo "$TAG already identifies $existing" >&2; exit 1; fi
+          if [[ -z "$existing" ]]; then git tag -a "$TAG" -m "Better Bees $VERSION"; git push --atomic origin HEAD:refs/heads/main refs/tags/$TAG; fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: Create or update GitHub Release
+        env: { GH_TOKEN: '${{ github.token }}', TAG: '${{ needs.resolve.outputs.tag }}', VERSION: '${{ needs.resolve.outputs.version }}', PRE: '${{ needs.resolve.outputs.prerelease }}' }
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            args=(); [[ "$PRE" == true ]] && args+=(--prerelease)
+            gh release create "$TAG" release-assets/* --verify-tag --generate-notes --title "Better Bees $VERSION" "${args[@]}"
           fi
-      - name: Validate Modrinth project and release candidate
+          gh release view "$TAG" --json body --jq .body > release-assets/release-notes.md
+      - uses: actions/upload-artifact@v7
+        with: { name: release-notes, path: release-assets/release-notes.md, overwrite: true }
+
+  publish_modrinth:
+    needs: [resolve, package, publish_github]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { minecraft: '1.21.1', java: '21', jade_range: '[15.1.6,16)' }
+          - { minecraft: '1.21.4', java: '21', jade_range: '[17.0.1,18)' }
+          - { minecraft: '1.21.8', java: '21', jade_range: '[19.0.4,20)' }
+          - { minecraft: '1.21.11', java: '21', jade_range: '[21.0.1,22)' }
+          - { minecraft: '26.1.2', java: '25', jade_range: '[26.0.9,27)' }
+          - { minecraft: '26.2', java: '25', jade_range: '[26.2.2,27)' }
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: '${{ needs.resolve.outputs.sha }}' }
+      - uses: actions/download-artifact@v8
+        with: { name: 'betterbees-${{ needs.resolve.outputs.version }}-validated', path: release-assets }
+      - uses: actions/download-artifact@v8
+        with: { name: release-notes, path: release-assets }
+      - name: Validate or recover matching Modrinth version
         id: modrinth
         env:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-          MODRINTH_PROJECT_ID: zMjnE1QT
-          VERSION: ${{ needs.resolve_version.outputs.release_version }}
-          VERSION_TYPE: ${{ needs.resolve_version.outputs.modrinth_version_type }}
-          JAR_NAME: ${{ needs.resolve_version.outputs.jar_name }}
-        shell: bash
+          VERSION: ${{ needs.resolve.outputs.version }}
+          VERSION_TYPE: ${{ needs.resolve.outputs.modrinth_type }}
+          MC: ${{ matrix.target.minecraft }}
+          JADE_RANGE: ${{ matrix.target.jade_range }}
         run: |
-          set -euo pipefail
-          jade_range="$(sed -n 's/^jade_version_range=//p' gradle.properties | tail -n 1 | tr -d '\r')"
+          python3 - <<'PY'
+          import json, os
+          json.dump({'dependencies':[{'name':'Jade','project_id':'nvQzSEkH','dependency_type':'optional','version_range':os.environ['JADE_RANGE']}]}, open('/tmp/dependencies.json','w'))
+          PY
           python3 scripts/ci/validate-modrinth-release.py \
-            --manifest .github/modrinth-dependencies.json \
-            --jade-version-range "$jade_range" \
-            --expected-version "$VERSION" \
-            --target-project "$MODRINTH_PROJECT_ID" \
-            --game-version 1.21.1 \
-            --version-type "$VERSION_TYPE" \
-            --artifact "release-assets/$JAR_NAME" \
-            --display-name "Better Bees $VERSION" \
-            --online
-      - name: Commit version and create tag
-        id: git_release
-        env:
-          VERSION: ${{ needs.resolve_version.outputs.release_version }}
-          CURRENT_VERSION: ${{ needs.resolve_version.outputs.current_version }}
-          TAG: ${{ needs.resolve_version.outputs.tag }}
-          SOURCE_SHA: ${{ needs.resolve_version.outputs.source_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          remote_tag="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
-          if [[ -z "$remote_tag" ]]; then
-            remote_tag="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
-          fi
-          if [[ -n "$remote_tag" ]]; then
-            if [[ "$remote_tag" != "$SOURCE_SHA" ]]; then
-              echo "Existing tag $TAG points to $remote_tag, not tested commit $SOURCE_SHA; refusing to move it" >&2
-              exit 1
-            fi
-            echo "Existing tag $TAG already identifies the tested commit; publication recovery is safe."
-            echo "commit_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ "$VERSION" != "$CURRENT_VERSION" ]]; then
-            sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
-            git add gradle.properties
-            git commit -m "Release $VERSION"
-          fi
-          release_commit="$(git rev-parse HEAD)"
-          git tag --annotate "$TAG" --message "Better Bees $VERSION"
-          git push --atomic origin "HEAD:refs/heads/main" "refs/tags/$TAG"
-          echo "commit_sha=$release_commit" >> "$GITHUB_OUTPUT"
-      - name: Verify published repository state
-        env:
-          TAG: ${{ needs.resolve_version.outputs.tag }}
-          EXPECTED_SHA: ${{ steps.git_release.outputs.commit_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
-          remote_tag="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
-          if [[ -z "$remote_tag" ]]; then
-            remote_tag="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
-          fi
-          if [[ "$remote_main" != "$EXPECTED_SHA" || "$remote_tag" != "$EXPECTED_SHA" ]]; then
-            echo "Expected main and $TAG to identify $EXPECTED_SHA; got main=$remote_main tag=$remote_tag" >&2
-            exit 1
-          fi
-      - name: Create or update GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.resolve_version.outputs.tag }}
-          VERSION: ${{ needs.resolve_version.outputs.release_version }}
-          JAR_NAME: ${{ needs.resolve_version.outputs.jar_name }}
-          IS_PRERELEASE: ${{ needs.resolve_version.outputs.is_prerelease }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" \
-              "release-assets/$JAR_NAME" \
-              "release-assets/$JAR_NAME.sha256" \
-              --clobber
-          else
-            prerelease=()
-            if [[ "$IS_PRERELEASE" == "true" ]]; then
-              prerelease+=(--prerelease)
-            fi
-            gh release create "$TAG" \
-              "release-assets/$JAR_NAME" \
-              "release-assets/$JAR_NAME.sha256" \
-              --verify-tag --generate-notes \
-              --title "Better Bees $VERSION" \
-              "${prerelease[@]}"
-          fi
-          gh release view "$TAG" --json body --jq '.body' > release-assets/release-notes.md
-          if [[ ! -s release-assets/release-notes.md ]]; then
-            printf 'Better Bees %s for NeoForge 1.21.1.\n' "$VERSION" > release-assets/release-notes.md
-          fi
-      - name: Publish Modrinth release
+            --manifest /tmp/dependencies.json --jade-version-range "$JADE_RANGE" \
+            --expected-version "$VERSION+mc$MC" --target-project zMjnE1QT \
+            --game-version "$MC" --version-type "$VERSION_TYPE" \
+            --artifact "release-assets/betterbees-$VERSION-neoforge-$MC.jar" \
+            --display-name "Better Bees $VERSION for Minecraft $MC" --online
+      - uses: Kira-NT/mc-publish@52307b03863581dec6b652b83e597aec02ebb075
         if: steps.modrinth.outputs.publish == 'true'
-        uses: Kira-NT/mc-publish@52307b03863581dec6b652b83e597aec02ebb075 # v3.3.1
         with:
           modrinth-id: zMjnE1QT
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          modrinth-files: release-assets/${{ needs.resolve_version.outputs.jar_name }}
-          modrinth-name: Better Bees ${{ needs.resolve_version.outputs.release_version }}
-          modrinth-version: ${{ needs.resolve_version.outputs.release_version }}
-          modrinth-version-type: ${{ needs.resolve_version.outputs.modrinth_version_type }}
+          modrinth-files: release-assets/betterbees-${{ needs.resolve.outputs.version }}-neoforge-${{ matrix.target.minecraft }}.jar
+          modrinth-name: Better Bees ${{ needs.resolve.outputs.version }} for Minecraft ${{ matrix.target.minecraft }}
+          modrinth-version: ${{ needs.resolve.outputs.version }}+mc${{ matrix.target.minecraft }}
+          modrinth-version-type: ${{ needs.resolve.outputs.modrinth_type }}
           modrinth-changelog-file: release-assets/release-notes.md
           modrinth-loaders: neoforge
-          modrinth-game-versions: 1.21.1
+          modrinth-game-versions: ${{ matrix.target.minecraft }}
           modrinth-game-version-filter: none
-          modrinth-dependencies: ${{ steps.modrinth.outputs.dependencies }}
-          modrinth-java: 21
+          modrinth-dependencies: nvQzSEkH(optional)
+          modrinth-java: ${{ matrix.target.java }}
           modrinth-retry-attempts: 3
-          modrinth-retry-delay: 10000
           modrinth-fail-mode: fail
       - name: Verify Modrinth publication
         env:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-          MODRINTH_PROJECT_ID: zMjnE1QT
-          VERSION: ${{ needs.resolve_version.outputs.release_version }}
-          VERSION_TYPE: ${{ needs.resolve_version.outputs.modrinth_version_type }}
-          JAR_NAME: ${{ needs.resolve_version.outputs.jar_name }}
-        shell: bash
+          VERSION: ${{ needs.resolve.outputs.version }}
+          VERSION_TYPE: ${{ needs.resolve.outputs.modrinth_type }}
+          MC: ${{ matrix.target.minecraft }}
+          JADE_RANGE: ${{ matrix.target.jade_range }}
         run: |
-          set -euo pipefail
-          jade_range="$(sed -n 's/^jade_version_range=//p' gradle.properties | tail -n 1 | tr -d '\r')"
           python3 scripts/ci/validate-modrinth-release.py \
-            --manifest .github/modrinth-dependencies.json \
-            --jade-version-range "$jade_range" \
-            --expected-version "$VERSION" \
-            --target-project "$MODRINTH_PROJECT_ID" \
-            --game-version 1.21.1 \
-            --version-type "$VERSION_TYPE" \
-            --artifact "release-assets/$JAR_NAME" \
-            --display-name "Better Bees $VERSION" \
-            --online \
-            --expect-existing
-      - name: Publish completion summary
-        run: |
-          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
-          ## Published Better Bees ${{ needs.resolve_version.outputs.release_version }}
-
-          Tag: `${{ needs.resolve_version.outputs.tag }}`
-          Commit: `${{ steps.git_release.outputs.commit_sha }}`
-          Prerelease: `${{ needs.resolve_version.outputs.is_prerelease }}`
-          GitHub and Modrinth publication verified.
-          SUMMARY
+            --manifest /tmp/dependencies.json --jade-version-range "$JADE_RANGE" \
+            --expected-version "$VERSION+mc$MC" --target-project zMjnE1QT \
+            --game-version "$MC" --version-type "$VERSION_TYPE" \
+            --artifact "release-assets/betterbees-$VERSION-neoforge-$MC.jar" \
+            --display-name "Better Bees $VERSION for Minecraft $MC" --online --expect-existing

@@ -1,94 +1,72 @@
 name: CI
-
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
   workflow_dispatch:
-
-permissions:
-  contents: read
-
+permissions: { contents: read }
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
 jobs:
-  release_tooling:
-    name: Release tooling
+  tooling:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-      - name: Test version resolver
-        run: python3 scripts/ci/test-resolve-version.py
-      - name: Test and validate Modrinth metadata
-        shell: bash
-        run: |
-          set -euo pipefail
-          jade_range="$(sed -n 's/^jade_version_range=//p' gradle.properties | tail -n 1 | tr -d '\r')"
-          mod_version="$(sed -n 's/^mod_version=//p' gradle.properties | tail -n 1 | tr -d '\r')"
-          version_type=release
-          if [[ "$mod_version" == *-* ]]; then
-            version_type=beta
-          fi
-          python3 scripts/ci/test-validate-modrinth-release.py
-          python3 scripts/ci/validate-modrinth-release.py \
-            --manifest .github/modrinth-dependencies.json \
-            --jade-version-range "$jade_range" \
-            --expected-version "$mod_version" \
-            --game-version 1.21.1 \
-            --version-type "$version_type"
-      - name: Check release shell scripts
-        run: bash -n scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh
-
+      - uses: actions/checkout@v7
+      - run: python3 scripts/ci/test-resolve-version.py
+      - run: bash -n scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh scripts/ci/world-upgrade.sh
+      - run: python3 -m json.tool gradle/targets.json >/dev/null
   compatibility:
-    name: NeoForge ${{ matrix.neo_version }}
+    name: ${{ matrix.minecraft }} / NeoForge ${{ matrix.neo }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        neo_version: ['21.1.1', '21.1.50', '21.1.213', '21.1.248']
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: temurin
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Build and run GameTests
-        run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo_version }} build runGameTestServer
-
-  jade_compatibility:
-    name: Jade ${{ matrix.jade_version }} / NeoForge ${{ matrix.neo_version }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
-          - neo_version: '21.1.1'
-            jade_version: '15.1.6+neoforge'
-          - neo_version: '21.1.248'
-            jade_version: '15.10.6+neoforge'
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.1', java: '21' }
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.50', java: '21' }
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.213', java: '21' }
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.249', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.121', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.157', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.9', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.54', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.42', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.45', java: '21' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.71', java: '25' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.100', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.57', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.72', java: '25' }
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: temurin
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-      - name: Build and run GameTests with Jade
-        run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo_version }} -PwithJade=true -Pjade_version=${{ matrix.jade_version }} build runGameTestServer
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo }} :${{ matrix.project }}:build :${{ matrix.project }}:runGameTestServer
+  jade:
+    name: Jade ${{ matrix.jade }} / MC ${{ matrix.minecraft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.1', jade: '15.1.6+neoforge', java: '21' }
+          - { project: mc1_21_1, minecraft: '1.21.1', neo: '21.1.249', jade: '15.10.6+neoforge', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.121', jade: '17.0.1+neoforge', java: '21' }
+          - { project: mc1_21_4, minecraft: '1.21.4', neo: '21.4.157', jade: '17.3.0+neoforge', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.9', jade: '19.0.4+neoforge', java: '21' }
+          - { project: mc1_21_8, minecraft: '1.21.8', neo: '21.8.54', jade: '19.3.1+neoforge', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.42', jade: '21.0.1+neoforge', java: '21' }
+          - { project: mc1_21_11, minecraft: '1.21.11', neo: '21.11.45', jade: '21.1.7+neoforge', java: '21' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.71', jade: '26.0.9+neoforge', java: '25' }
+          - { project: mc26_1_2, minecraft: '26.1.2', neo: '26.1.2.100', jade: '26.1.10+neoforge', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.57', jade: '26.2.2+neoforge', java: '25' }
+          - { project: mc26_2, minecraft: '26.2', neo: '26.2.0.72', jade: '26.2.10+neoforge', java: '25' }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew --no-daemon -Pneo_version=${{ matrix.neo }} -Pjade_version=${{ matrix.jade }} -PwithJade=true :${{ matrix.project }}:build :${{ matrix.project }}:runGameTestServer

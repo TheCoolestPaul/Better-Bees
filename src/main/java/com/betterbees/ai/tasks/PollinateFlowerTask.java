@@ -32,7 +32,7 @@ public final class PollinateFlowerTask extends Behavior<Bee> {
                 .filter(pos -> validFlower(level, pos.pos())).isPresent()
                 && bee.getBrain().getMemory(ModMemoryTypes.POLLINATING_COOLDOWN.get()).isEmpty()
                 && !bee.getBrain().getMemory(ModMemoryTypes.WANTS_HIVE.get()).orElse(false)
-                && !level.isRaining() && !level.isNight();
+                && !level.isRaining() && !com.betterbees.platform.VersionHooks.isNight(level);
     }
 
     @Override protected boolean checkExtraStartConditions(ServerLevel level, Bee bee) { return valid(level, bee); }

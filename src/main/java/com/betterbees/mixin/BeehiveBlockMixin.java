@@ -1,12 +1,12 @@
 package com.betterbees.mixin;
 
 import com.betterbees.hive.HiveHoneyService;
+import com.betterbees.platform.VersionHooks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.stats.Stats;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.Bee;
 import net.minecraft.world.entity.player.Player;
@@ -42,16 +42,16 @@ public abstract class BeehiveBlockMixin {
     @Inject(method = "useItemOn", at = @At("HEAD"), cancellable = true)
     private void betterbees$incrementalHarvest(ItemStack stack, BlockState state, Level level, BlockPos pos,
                                                 Player player, InteractionHand hand, BlockHitResult hitResult,
-                                                CallbackInfoReturnable<ItemInteractionResult> cir) {
+                                                CallbackInfoReturnable<Object> cir) {
         boolean shears = stack.canPerformAction(ItemAbilities.SHEARS_HARVEST);
         boolean bottle = stack.is(Items.GLASS_BOTTLE);
         if (!shears && !bottle) return;
         if (level.isClientSide()) {
-            cir.setReturnValue(ItemInteractionResult.sidedSuccess(true));
+            cir.setReturnValue(VersionHooks.itemInteractionSuccess(true));
             return;
         }
         if (!(level.getBlockEntity(pos) instanceof BeehiveBlockEntity hive) || !HiveHoneyService.canHarvest(hive)) {
-            cir.setReturnValue(ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION);
+            cir.setReturnValue(VersionHooks.itemInteractionPass());
             return;
         }
 
@@ -76,7 +76,7 @@ public abstract class BeehiveBlockMixin {
             if (!hive.isEmpty()) betterbees$angerNearbyBees(level, pos);
             hive.emptyAllLivingFromHive(player, level.getBlockState(pos), BeehiveBlockEntity.BeeReleaseStatus.EMERGENCY);
         }
-        cir.setReturnValue(ItemInteractionResult.sidedSuccess(false));
+        cir.setReturnValue(VersionHooks.itemInteractionSuccess(false));
     }
 
     @Unique

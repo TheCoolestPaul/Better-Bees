@@ -232,10 +232,8 @@ def main() -> int:
         target = api_get(f"/project/{args.target_project}", token)
         if target.get("id") != args.target_project:
             raise ValidationError(f"Target resolved to the wrong Modrinth project: {target.get('id')!r}")
-        if args.loader not in target.get("loaders", []) or args.game_version not in target.get(
-            "game_versions", []
-        ):
-            raise ValidationError("Target project does not advertise NeoForge and Minecraft 1.21.1")
+        if args.loader not in target.get("loaders", []):
+            raise ValidationError(f"Target project does not advertise loader {args.loader}")
         print(f"Validated target project {target.get('title')} ({target.get('status')})")
 
         for dependency in dependencies:

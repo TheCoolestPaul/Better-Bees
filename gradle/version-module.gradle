@@ -1,0 +1,279 @@
+import groovy.json.JsonSlurper
+import groovy.io.FileType
+
+apply plugin: 'java-library'
+apply plugin: 'maven-publish'
+apply plugin: 'net.neoforged.moddev'
+apply plugin: 'idea'
+
+def targets = new JsonSlurper().parse(rootProject.file('gradle/targets.json'))
+def targetEntry = targets.find { entry -> entry.value.project == project.name }
+if (targetEntry == null) {
+    throw new GradleException("No Better Bees target is configured for ${project.path}")
+}
+def target = targetEntry.value
+
+ext.betterBeesTarget = target
+version = rootProject.mod_version
+group = rootProject.mod_group_id
+
+base {
+    archivesName = rootProject.mod_id
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(target.java as int)
+}
+
+repositories {
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'Modrinth'
+                url = 'https://api.modrinth.com/maven'
+            }
+        }
+        filter { includeGroup 'maven.modrinth' }
+    }
+}
+
+def effectiveNeoVersion = providers.gradleProperty('neo_version').getOrElse(target.neoFloor as String)
+def effectiveJadeVersion = providers.gradleProperty('jade_version').getOrElse(target.jadeFloor as String)
+def sharedJavaDirectory = rootProject.file('src/main/java')
+def sharedResourcesDirectory = rootProject.file('src/main/resources')
+def sharedTemplatesDirectory = rootProject.file('src/main/templates')
+def sourceParentVersions = (target.sourceParents ?: []) as List<String>
+def overlayJavaDirectories = sourceParentVersions.collect { rootProject.file("versions/${it}/src/main/java") } + project.file('src/main/java')
+def overlayResourcesDirectories = sourceParentVersions.collect { rootProject.file("versions/${it}/src/main/resources") } + project.file('src/main/resources')
+
+def relativeOverlayFiles = { File root ->
+    root.exists()
+            ? fileTree(root).files.collect { root.toPath().relativize(it.toPath()).toString().replace('\\', '/') }
+            : []
+}
+
+def javaOverlayPaths = overlayJavaDirectories.collect { relativeOverlayFiles(it) }
+def resourceOverlayPaths = overlayResourcesDirectories.collect { relativeOverlayFiles(it) }
+def allJavaOverlays = javaOverlayPaths.flatten().unique()
+def allResourceOverlays = resourceOverlayPaths.flatten().unique()
+
+sourceSets.main.java.setSrcDirs([])
+sourceSets.main.resources.setSrcDirs([layout.buildDirectory.dir('generated/resources')])
+
+def generateModernGameTests = null
+if (target.modernGameTests) {
+    generateModernGameTests = tasks.register('generateModernGameTests') {
+        def inputFile = rootProject.file('src/main/java/com/betterbees/gametest/BetterBeesGameTests.java')
+        def outputFile = layout.buildDirectory.file('generated/versionSources/com/betterbees/gametest/BetterBeesGameTests.java')
+        inputs.file(inputFile)
+        outputs.file(outputFile)
+        doLast {
+            def text = inputFile.getText('UTF-8')
+                    .replace('import net.minecraft.gametest.framework.GameTest;\n', '')
+                    .replace('import net.neoforged.neoforge.gametest.GameTestHolder;\n', '')
+                    .replace('import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;\n', '')
+                    .replace('@GameTestHolder(BetterBees.MOD_ID)\n', '')
+                    .replace('@PrefixGameTestTemplate(false)\n', '')
+                    .replace('@GameTest(', '@SharedGameTest(')
+            def file = outputFile.get().asFile
+            file.parentFile.mkdirs()
+            file.setText(text, 'UTF-8')
+        }
+    }
+}
+
+def generateAdaptedSources = null
+if (target.sourceReplacements) {
+    generateAdaptedSources = tasks.register('generateAdaptedSources') {
+        inputs.dir(sharedJavaDirectory)
+        overlayJavaDirectories.each { if (it.exists()) inputs.dir(it) }
+        inputs.property('sourceReplacements', target.sourceReplacements.toString())
+        def outputDirectory = layout.buildDirectory.dir('generated/adaptedSources')
+        outputs.dir(outputDirectory)
+        doLast {
+            def destination = outputDirectory.get().asFile
+            destination.deleteDir()
+            destination.mkdirs()
+            def sources = [:]
+            ([sharedJavaDirectory] + overlayJavaDirectories).each { directory ->
+                if (directory.exists()) {
+                    directory.eachFileRecurse(FileType.FILES) { file ->
+                        if (file.name.endsWith('.java')) {
+                            def relative = directory.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+                            sources[relative] = file
+                        }
+                    }
+                }
+            }
+            sources.each { relative, inputFile ->
+                def text = inputFile.getText('UTF-8')
+                if (target.modernGameTests && relative == 'com/betterbees/gametest/BetterBeesGameTests.java') {
+                    text = text.replace('import net.minecraft.gametest.framework.GameTest;\n', '')
+                            .replace('import net.neoforged.neoforge.gametest.GameTestHolder;\n', '')
+                            .replace('import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;\n', '')
+                            .replace('@GameTestHolder(BetterBees.MOD_ID)\n', '')
+                            .replace('@PrefixGameTestTemplate(false)\n', '')
+                            .replace('@GameTest(', '@SharedGameTest(')
+                }
+                target.sourceReplacements.each { oldText, newText -> text = text.replace(oldText, newText) }
+                def outputFile = new File(destination, relative)
+                outputFile.parentFile.mkdirs()
+                outputFile.setText(text, 'UTF-8')
+            }
+        }
+    }
+}
+
+tasks.named('compileJava', JavaCompile).configure {
+    def sharedExcludes = new ArrayList<String>(allJavaOverlays)
+    if (target.modernGameTests) sharedExcludes.add('com/betterbees/gametest/BetterBeesGameTests.java')
+    if (generateAdaptedSources == null) {
+        source(fileTree(sharedJavaDirectory) { exclude sharedExcludes })
+        overlayJavaDirectories.eachWithIndex { directory, index ->
+            def laterPaths = javaOverlayPaths.drop(index + 1).flatten().unique()
+            source(fileTree(directory) { exclude laterPaths })
+        }
+    } else {
+        dependsOn generateAdaptedSources
+        source(layout.buildDirectory.dir('generated/adaptedSources'))
+    }
+    options.encoding = 'UTF-8'
+    options.release = target.java as int
+    if (generateModernGameTests != null && generateAdaptedSources == null) {
+        dependsOn generateModernGameTests
+        source(layout.buildDirectory.dir('generated/versionSources'))
+    }
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    from(fileTree(sharedResourcesDirectory) { exclude allResourceOverlays })
+    overlayResourcesDirectories.eachWithIndex { directory, index ->
+        def laterPaths = resourceOverlayPaths.drop(index + 1).flatten().unique()
+        from(fileTree(directory) { exclude laterPaths })
+    }
+}
+
+neoForge {
+    version = effectiveNeoVersion
+
+    if (target.parchmentMappings) {
+        parchment {
+            mappingsVersion = target.parchmentMappings
+            minecraftVersion = target.parchmentMinecraft
+        }
+    }
+
+    runs {
+        client {
+            client()
+            gameDirectory = rootProject.file("run/${target.minecraft}/client")
+            systemProperty 'neoforge.enabledGameTestNamespaces', rootProject.mod_id
+        }
+        server {
+            server()
+            gameDirectory = rootProject.file("run/${target.minecraft}/server")
+            programArgument '--nogui'
+            systemProperty 'neoforge.enabledGameTestNamespaces', rootProject.mod_id
+        }
+        gameTestServer {
+            type = 'gameTestServer'
+            gameDirectory = providers.gradleProperty('upgradeGameDirectory')
+                    .map { rootProject.file(it) }
+                    .getOrElse(rootProject.file("run/${target.minecraft}/gametest"))
+            systemProperty 'neoforge.enabledGameTestNamespaces', rootProject.mod_id
+        }
+        configureEach {
+            logLevel = org.slf4j.event.Level.INFO
+        }
+    }
+
+    mods {
+        "${rootProject.mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+configurations {
+    runtimeClasspath.extendsFrom localRuntime
+}
+
+dependencies {
+    compileOnly("maven.modrinth:jade:${effectiveJadeVersion}") { transitive = false }
+    if (providers.gradleProperty('withJade').map { it.toBoolean() }.getOrElse(false)) {
+        localRuntime("maven.modrinth:jade:${effectiveJadeVersion}") { transitive = false }
+    }
+}
+
+def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    def replaceProperties = [
+            minecraft_version       : target.minecraft,
+            minecraft_version_range : target.minecraftRange,
+            neo_version             : effectiveNeoVersion,
+            neo_version_range       : target.neoRange,
+            jade_version_range      : target.jadeRange,
+            loader_version_range    : rootProject.loader_version_range,
+            mod_id                  : rootProject.mod_id,
+            mod_name                : rootProject.mod_name,
+            mod_license             : rootProject.mod_license,
+            mod_version             : rootProject.mod_version,
+            mod_authors             : rootProject.mod_authors,
+            mod_description         : rootProject.mod_description
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from sharedTemplatesDirectory
+    into layout.buildDirectory.dir('generated/modMetadata')
+}
+
+sourceSets.main.resources.srcDir(generateModMetadata)
+neoForge.ideSyncTask(generateModMetadata)
+
+tasks.named('jar', Jar).configure {
+    archiveFileName = "${rootProject.mod_id}-${rootProject.mod_version}-neoforge-${target.minecraft}.jar"
+    from(rootProject.file('LICENSE')) { into 'META-INF' }
+    from(rootProject.file('THIRD_PARTY_NOTICES.md')) { into 'META-INF' }
+    from(rootProject.file('TEMPLATE_LICENSE.txt')) {
+        into 'META-INF'
+        rename { 'NEOFORGE_MDK_LICENSE.txt' }
+    }
+}
+
+def generateGameTestStructure = tasks.register('generateGameTestStructure') {
+    def outputFile = layout.buildDirectory.file("generated/resources/data/${rootProject.mod_id}/structure/empty.nbt")
+    outputs.file(outputFile)
+    doLast {
+        def targetFile = outputFile.get().asFile
+        targetFile.parentFile.mkdirs()
+        targetFile.withOutputStream { raw ->
+            def data = new DataOutputStream(new java.util.zip.GZIPOutputStream(raw))
+            data.writeByte(10); data.writeUTF('')
+            data.writeByte(3); data.writeUTF('DataVersion'); data.writeInt(3955)
+            data.writeByte(9); data.writeUTF('size'); data.writeByte(3); data.writeInt(3)
+            data.writeInt(3); data.writeInt(3); data.writeInt(3)
+            data.writeByte(9); data.writeUTF('palette'); data.writeByte(10); data.writeInt(1)
+            data.writeByte(8); data.writeUTF('Name'); data.writeUTF('minecraft:air'); data.writeByte(0)
+            data.writeByte(9); data.writeUTF('blocks'); data.writeByte(10); data.writeInt(0)
+            data.writeByte(9); data.writeUTF('entities'); data.writeByte(10); data.writeInt(0)
+            data.writeByte(0)
+            data.close()
+        }
+    }
+}
+
+tasks.named('processResources').configure {
+    dependsOn generateGameTestStructure
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            from components.java
+        }
+    }
+}
+
+idea.module {
+    downloadSources = true
+    downloadJavadoc = true
+}

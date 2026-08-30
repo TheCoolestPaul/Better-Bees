@@ -9,3 +9,9 @@ plugins {
 }
 
 rootProject.name = 'betterbees'
+
+['1.21.1', '1.21.4', '1.21.8', '1.21.11', '26.1.2', '26.2'].each { minecraftVersion ->
+    def projectName = "mc${minecraftVersion.replace('.', '_')}"
+    include(projectName)
+    project(":${projectName}").projectDir = file("versions/${minecraftVersion}")
+}

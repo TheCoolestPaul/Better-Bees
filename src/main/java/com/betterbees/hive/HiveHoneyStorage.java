@@ -8,4 +8,8 @@ public interface HiveHoneyStorage {
     boolean betterbees$isHoneyDisplayDirty();
 
     void betterbees$markHoneyDisplaySynced();
+
+    void betterbees$setLoadingOccupants(boolean loading);
+
+    void betterbees$restoreHoney(int honey);
 }

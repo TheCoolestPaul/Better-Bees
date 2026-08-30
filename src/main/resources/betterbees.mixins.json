@@ -6,9 +6,12 @@
   "mixins": [
     "BeeAccessor",
     "BeeMixin",
+    "BeePersistenceMixin",
+    "BeeSpawnMixin",
     "BeehiveBlockMixin",
     "BeehiveAccessor",
     "BeehiveBlockEntityMixin",
+    "BeehivePersistenceMixin",
     "BeehiveHoneyDepositMixin",
     "BeehiveOccupantMixin",
     "DispenserBlockAccessor",

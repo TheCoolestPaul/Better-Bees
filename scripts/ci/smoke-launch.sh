@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 2 ]]; then
-  echo "Usage: $0 <server|client> <NeoForge version> [additional Gradle arguments...]" >&2
+if [[ $# -lt 3 ]]; then
+  echo "Usage: $0 <server|client> <Gradle project> <NeoForge version> [additional Gradle arguments...]" >&2
   exit 2
 fi
 
 mode="$1"
-neo_version="$2"
+project="$2"
+neo_version="$3"
 timeout_seconds="${SMOKE_TIMEOUT_SECONDS:-240}"
 
 case "$mode" in
   server)
-    gradle_task="runServer"
+    gradle_task=":${project}:runServer"
     markers=('Done \([0-9.]+s\)! For help')
     ;;
   client)
-    gradle_task="runClient"
+    gradle_task=":${project}:runClient"
     markers=(
       'Reloading ResourceManager:.*mod/betterbees'
       'textures/atlas/blocks.png-atlas'
@@ -29,7 +30,7 @@ case "$mode" in
     ;;
 esac
 
-for argument in "${@:3}"; do
+for argument in "${@:4}"; do
   if [[ "$argument" == "-PwithJade=true" ]]; then
     markers+=('Loaded plugin from com\.betterbees\.compat\.jade\.BetterBeesJadePlugin')
     break
@@ -40,12 +41,15 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 mkdir -p build/smoke run
-log_file="build/smoke/${mode}-${neo_version}.log"
+log_file="build/smoke/${mode}-${project}-${neo_version}.log"
 if [[ "$mode" == "server" ]]; then
-  printf 'eula=true\n' > run/eula.txt
+  minecraft_version="${project#mc}"
+  minecraft_version="${minecraft_version//_/.}"
+  mkdir -p "run/${minecraft_version}/server"
+  printf 'eula=true\n' > "run/${minecraft_version}/server/eula.txt"
 fi
 
-command=(./gradlew --no-daemon "-Pneo_version=${neo_version}" "${@:3}" "$gradle_task")
+command=(./gradlew --no-daemon "-Pneo_version=${neo_version}" "${@:4}" "$gradle_task")
 if [[ "$mode" == "client" ]]; then
   # Hosted runners have no physical audio device. OpenAL's null backend keeps
   # that environmental limitation separate from client/mod initialization.
@@ -65,7 +69,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "Starting Better Bees $mode smoke test on NeoForge $neo_version"
+echo "Starting Better Bees $mode smoke test for $project on NeoForge $neo_version"
 setsid "${command[@]}" >"$log_file" 2>&1 &
 smoke_pid=$!
 deadline=$((SECONDS + timeout_seconds))

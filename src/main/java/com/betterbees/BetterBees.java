@@ -4,6 +4,7 @@ import com.betterbees.config.BetterBeesConfig;
 import com.betterbees.registry.ModMemoryTypes;
 import com.betterbees.registry.ModSensorTypes;
 import com.betterbees.registry.ModDataComponents;
+import com.betterbees.platform.VersionHooks;
 import com.mojang.logging.LogUtils;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -22,6 +23,7 @@ public final class BetterBees {
         ModMemoryTypes.REGISTER.register(modBus);
         ModSensorTypes.REGISTER.register(modBus);
         ModDataComponents.REGISTER.register(modBus);
+        VersionHooks.registerGameTests(modBus);
         container.registerConfig(ModConfig.Type.SERVER, BetterBeesConfig.SPEC);
         NeoForge.EVENT_BUS.addListener(this::serverStarted);
     }
