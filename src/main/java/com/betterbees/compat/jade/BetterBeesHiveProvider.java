@@ -1,20 +1,17 @@
 package com.betterbees.compat.jade;
 
-import com.betterbees.compat.HiveOverlayData;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.level.block.entity.BeehiveBlockEntity;
 import snownee.jade.api.BlockAccessor;
 import snownee.jade.api.IBlockComponentProvider;
-import snownee.jade.api.IServerDataProvider;
 import snownee.jade.api.ITooltip;
 import snownee.jade.api.JadeIds;
 import snownee.jade.api.config.IPluginConfig;
 import snownee.jade.api.theme.IThemeHelper;
 
-enum BetterBeesHiveProvider implements IBlockComponentProvider, IServerDataProvider<BlockAccessor> {
+enum BetterBeesHiveProvider implements IBlockComponentProvider {
     INSTANCE;
 
     private static final ResourceLocation UID = ResourceLocation.fromNamespaceAndPath("minecraft", "beehive.betterbees");
@@ -23,21 +20,6 @@ enum BetterBeesHiveProvider implements IBlockComponentProvider, IServerDataProvi
     private static final String HONEY_CAPACITY_KEY = "HoneyCapacity";
     private static final String BEES_KEY = "Bees";
     private static final String BEE_CAPACITY_KEY = "BeeCapacity";
-
-    @Override
-    public void appendServerData(CompoundTag data, BlockAccessor accessor) {
-        if (!(accessor.getBlockEntity() instanceof BeehiveBlockEntity hive)) {
-            return;
-        }
-
-        HiveOverlayData values = HiveOverlayData.from(hive);
-        CompoundTag hiveData = new CompoundTag();
-        hiveData.putInt(HONEY_KEY, values.honey());
-        hiveData.putInt(HONEY_CAPACITY_KEY, values.honeyCapacity());
-        hiveData.putInt(BEES_KEY, values.bees());
-        hiveData.putInt(BEE_CAPACITY_KEY, values.beeCapacity());
-        data.put(DATA_KEY, hiveData);
-    }
 
     @Override
     public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {

@@ -143,10 +143,30 @@ compiled against its platform floor so newer-only calls fail during development.
 
 ### Continuous integration and releases
 
-Pull requests and pushes to `main` run all GameTests at NeoForge, Fabric, and
-Quilt endpoints for every target, retain the four NeoForge 1.21.1 checkpoints,
-and test the oldest and latest loader-specific Jade releases on all three
-platforms. Ordinary CI retains no jars.
+Pull requests, pushes to `main`, and releases share one validation workflow.
+It runs 32 endpoint jobs: minimum and latest dependency stacks for six NeoForge,
+six Fabric, and four supported Quilt targets. Each builds, runs the gameplay
+GameTests, and starts a client without Jade. Latest-stack jobs also start a
+normal dedicated server and client with Jade. Three sequential world-upgrade
+jobs protect saved bee, honey, and hive-item data using normal dedicated
+servers that save and reopen the same world (GameTest runners can reset worlds).
+Missing upgrade fixtures after the first version hop fail instead of being
+recreated. Upgrade runs require a fresh directory and refuse to downgrade an
+existing world. Normal smoke launches also use isolated CI run directories.
+
+That is 35 runtime validation jobs and 64 ordinary smoke launches, plus one
+small tooling/matrix job. The two intermediate NeoForge 1.21.1 checkpoints and
+separate overlapping build/Jade jobs are no longer mandatory. Jade remains
+optional; the release gate tests its latest version, not every advertised Jade
+minimum. On NeoForge Minecraft 1.21.4, Jade 17.3.0 is the minimum supported
+version because 17.0.1 fails during client initialization.
+
+Smoke checks require actual Better Bees initialization, Fabric API on
+Fabric/Quilt, and completed Jade provider registration when enabled. Asset
+preparation runs before the startup deadline and may retry one asset-task
+failure; mod failures are never retried. Failed jobs retain startup logs,
+crash reports, and available test reports for seven days. Ordinary CI retains
+no release jars.
 
 Releases are self-service from **Actions > Release > Run workflow**. Choose
 `current`, `patch`, `minor`, `major`, or `custom`; supply `custom_version` only
@@ -155,9 +175,8 @@ read from the repository before the form is submitted. The first job and the
 run summary report the current project version, last published release,
 calculated release version, and `v<version>` tag before expensive validation.
 
-The workflow applies the calculated version to the full target matrix,
-smoke-launches dedicated servers and headless clients at every endpoint with
-and without Jade, then verifies all twelve floor-built jars and checksums. Only after
+The workflow applies the calculated version to the balanced validation matrix,
+then verifies all twelve floor-built jars and checksums. Only after
 all checks pass does it update `mod_version` (when needed), commit, tag, and
 publish the GitHub Release. Prerelease suffixes automatically create GitHub
 prereleases. A changed `main`, invalid/backward version, failed test, or jar

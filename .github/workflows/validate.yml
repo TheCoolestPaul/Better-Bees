@@ -1,0 +1,97 @@
+name: Validate
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      version:
+        default: ''
+        type: string
+permissions: { contents: read }
+
+jobs:
+  tooling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      targets: ${{ steps.matrix.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: '${{ inputs.ref }}' }
+      - run: |
+          python3 scripts/ci/test-resolve-version.py
+          python3 scripts/ci/test-validate-modrinth-release.py
+          python3 scripts/ci/test-target-matrix.py
+          python3 scripts/ci/test-check-smoke.py
+          python3 scripts/ci/test-smoke-launch.py
+          bash -n scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh scripts/ci/world-upgrade.sh scripts/ci/validate-target.sh
+      - id: matrix
+        run: echo "targets=$(python3 scripts/ci/target-matrix.py validation)" >> "$GITHUB_OUTPUT"
+
+  endpoint:
+    needs: tooling
+    name: ${{ matrix.platform }} ${{ matrix.minecraft }} ${{ matrix.endpoint }} (${{ matrix.loader }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.tooling.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: '${{ inputs.ref }}' }
+      - if: inputs.version != ''
+        env: { VERSION: '${{ inputs.version }}' }
+        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '${{ matrix.java }}', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: sudo apt-get update && sudo apt-get install --yes xvfb libgl1-mesa-dri
+      - name: Build, GameTests, and launch coverage
+        env: { TARGET: '${{ toJSON(matrix) }}' }
+        run: bash scripts/ci/validate-target.sh
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: failure-${{ matrix.platform }}-${{ matrix.minecraft }}-${{ matrix.endpoint }}
+          path: |
+            build/smoke/*.log
+            build/smoke/runs/**/logs/**
+            build/smoke/runs/**/crash-reports/**
+            run/**/logs/**
+            run/**/crash-reports/**
+            **/build/reports/**
+            **/build/run/**/logs/**
+            **/build/run/**/crash-reports/**
+          retention-days: 7
+          if-no-files-found: ignore
+
+  world_upgrade:
+    needs: tooling
+    name: Sequential ${{ matrix.platform }} world upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: { platform: [neoforge, fabric, quilt] }
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: '${{ inputs.ref }}' }
+      - if: inputs.version != ''
+        env: { VERSION: '${{ inputs.version }}' }
+        run: sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
+      - uses: actions/setup-java@v5
+        with: { java-version: '25', distribution: temurin }
+      - uses: gradle/actions/setup-gradle@v6
+      - run: bash scripts/ci/world-upgrade.sh ${{ matrix.platform }} "$RUNNER_TEMP/betterbees-upgrade-${{ matrix.platform }}"
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: failure-upgrade-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/betterbees-upgrade-${{ matrix.platform }}/upgrade-*.log
+            ${{ runner.temp }}/betterbees-upgrade-${{ matrix.platform }}/logs/**
+            ${{ runner.temp }}/betterbees-upgrade-${{ matrix.platform }}/crash-reports/**
+            **/build/reports/**
+          retention-days: 7
+          if-no-files-found: ignore

@@ -12,7 +12,6 @@ import com.betterbees.mixin.BeehiveAccessor;
 import com.betterbees.mixin.DispenserBlockAccessor;
 import com.betterbees.platform.VersionHooks;
 import com.betterbees.registry.ModMemoryTypes;
-import com.betterbees.util.BeePersistentState;
 import com.betterbees.util.BeeScaleService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -32,7 +31,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DispenserBlock;
 import net.minecraft.world.level.block.entity.BeehiveBlockEntity;
-import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.entity.DispenserBlockEntity;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -46,8 +44,6 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class BetterBeesGameTests {
     private static final BlockPos HIVE_POS = new BlockPos(1, 1, 1);
-    private static final BlockPos UPGRADE_HIVE_POS = new BlockPos(0, 200, 0);
-    private static final BlockPos UPGRADE_CHEST_POS = UPGRADE_HIVE_POS.east();
 
     private BetterBeesGameTests() {}
 
@@ -163,67 +159,8 @@ public final class BetterBeesGameTests {
 
     @GameTest(template = "empty")
     public static void forwardUpgradeFixtureRetainsBetterBeesData(GameTestHelper helper) {
-        var level = helper.getLevel();
-        if (!(level.getBlockEntity(UPGRADE_HIVE_POS) instanceof BeehiveBlockEntity)) {
-            level.setBlock(UPGRADE_HIVE_POS, Blocks.BEEHIVE.defaultBlockState(), 3);
-            level.setBlock(UPGRADE_CHEST_POS, Blocks.CHEST.defaultBlockState(), 3);
-            BeehiveBlockEntity hive = (BeehiveBlockEntity) level.getBlockEntity(UPGRADE_HIVE_POS);
-            ChestBlockEntity chest = (ChestBlockEntity) level.getBlockEntity(UPGRADE_CHEST_POS);
-            VersionHooks.assertTrue(helper, hive != null && chest != null, "upgrade fixture block entities must be created");
-
-            HiveHoneyService.set(hive, 13);
-            for (int i = 0; i < 2; i++) {
-                Bee bee = VersionHooks.createBee(level);
-                VersionHooks.assertTrue(helper, bee != null, "upgrade fixture bee must be created");
-                BeeAi.initMemories(bee, level.random);
-                BeePersistentState state = (BeePersistentState) bee;
-                state.betterbees$restoreMemorizedHome(UPGRADE_HIVE_POS);
-                state.betterbees$setHoneyCooldown(777);
-                hive.storeBee(BeehiveBlockEntity.Occupant.of(bee));
-                bee.discard();
-            }
-
-            ItemStack hiveItem = new ItemStack(Items.BEEHIVE);
-            VersionHooks.copyHiveToItem(hive, hiveItem, level.registryAccess());
-            chest.setItem(0, hiveItem);
-            hive.setChanged();
-            chest.setChanged();
-        }
-
-        BeehiveBlockEntity persistedHive = (BeehiveBlockEntity) level.getBlockEntity(UPGRADE_HIVE_POS);
-        ChestBlockEntity persistedChest = (ChestBlockEntity) level.getBlockEntity(UPGRADE_CHEST_POS);
-        VersionHooks.assertTrue(helper, persistedHive != null && persistedChest != null,
-                "upgrade fixture must remain available after a version hop");
-        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(persistedHive), 13,
-                "authoritative honey must survive a version hop");
-        VersionHooks.assertValueEqual(helper, persistedHive.getOccupantCount(), 2,
-                "stored occupants must survive a version hop");
-
-        ItemStack persistedItem = persistedChest.getItem(0);
-        VersionHooks.assertFalse(helper, persistedItem.isEmpty(), "silk-touch hive fixture must survive a version hop");
-        BeehiveBlockEntity itemHive = new BeehiveBlockEntity(UPGRADE_HIVE_POS, Blocks.BEEHIVE.defaultBlockState());
-        itemHive.applyComponentsFromItemStack(persistedItem);
-        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(itemHive), 13,
-                "hive-item honey must survive a version hop");
-        VersionHooks.assertValueEqual(helper, itemHive.getOccupantCount(), 2,
-                "hive-item occupants must survive a version hop");
-
-        for (BeehiveBlockEntity.Occupant occupant : ((BeehiveAccessor) persistedHive).betterbees$getBees()) {
-            Entity entity = occupant.createEntity(level, UPGRADE_HIVE_POS);
-            VersionHooks.assertTrue(helper, entity instanceof Bee, "stored upgrade occupant must reconstruct as a bee");
-            Bee bee = (Bee) entity;
-            BeePersistentState state = (BeePersistentState) bee;
-            VersionHooks.assertValueEqual(helper, state.betterbees$getMemorizedHome(), UPGRADE_HIVE_POS,
-                    "memorized home must survive a version hop");
-            VersionHooks.assertValueEqual(helper, state.betterbees$getHoneyCooldown(), 777,
-                    "honey cooldown must survive a version hop");
-            VersionHooks.assertTrue(helper, bee.getBrain().hasMemoryValue(ModMemoryTypes.POLLINATING_COOLDOWN.get()),
-                    "Better Bees Brain must initialize after a version hop");
-            AttributeInstance scale = bee.getAttribute(Attributes.SCALE);
-            VersionHooks.assertTrue(helper, scale != null && scale.hasModifier(BeeScaleService.MODIFIER_ID),
-                    "UUID-derived scale must initialize after a version hop");
-            bee.discard();
-        }
+        com.betterbees.validation.UpgradeFixture.verify(helper.getLevel(),
+                Boolean.getBoolean("betterbees.upgradeRequireExisting"));
         helper.succeed();
     }
 

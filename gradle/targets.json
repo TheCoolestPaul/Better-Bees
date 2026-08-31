@@ -14,7 +14,7 @@
     "project": "mc1_21_4", "fabricProject": "fabricMc1_21_4", "minecraft": "1.21.4", "java": 21,
     "minecraftRange": "[1.21.4,1.21.5)", "neoFloor": "21.4.121", "neoLatest": "21.4.157",
     "neoRange": "[21.4.121,21.5)", "neoCheckpoints": ["21.4.121", "21.4.157"],
-    "jadeFloor": "17.0.1+neoforge", "jadeLatest": "17.3.0+neoforge", "jadeRange": "[17.0.1,18)",
+    "jadeFloor": "17.3.0+neoforge", "jadeLatest": "17.3.0+neoforge", "jadeRange": "[17.3.0,18)",
     "fabricLoaderFloor": "0.16.10", "fabricLoaderLatest": "0.19.5", "fabricLoaderRange": ">=0.16.10",
     "fabricApiFloor": "0.110.5+1.21.4", "fabricApiLatest": "0.119.4+1.21.4", "fabricApiRange": "[0.110.5,1)",
     "quiltLoaderFloor": "0.28.0", "quiltLoaderLatest": "0.30.1",

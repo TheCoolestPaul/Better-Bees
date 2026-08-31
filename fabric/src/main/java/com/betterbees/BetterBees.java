@@ -19,7 +19,11 @@ public final class BetterBees implements ModInitializer {
         ModSensorTypes.initialize();
         ModDataComponents.initialize();
         ServerLifecycleEvents.SERVER_STARTING.register(server -> BetterBeesConfig.load(server));
-        ServerLifecycleEvents.SERVER_STARTED.register(server -> logEffectiveConfiguration());
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            logEffectiveConfiguration();
+            com.betterbees.validation.UpgradeFixture.runIfRequested(server);
+        });
+        LOGGER.info("Better Bees initialization complete");
     }
 
     private static void logEffectiveConfiguration() {

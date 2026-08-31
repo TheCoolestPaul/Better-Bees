@@ -139,9 +139,21 @@ sourceSets.main.resources.srcDir(generateFabricMetadata)
 tasks.named('processResources').configure { dependsOn generateFabricMetadata }
 
 loom {
+    mods {
+        "${rootProject.mod_id}" { sourceSet sourceSets.main }
+    }
     runs {
-        client { client(); runDir = rootProject.file("run/fabric/${target.minecraft}/client") }
-        server { server(); runDir = rootProject.file("run/fabric/${target.minecraft}/server"); programArgs '--nogui' }
+        client {
+            client()
+            runDir = rootProject.file(providers.gradleProperty('smokeGameDirectory').getOrElse("run/fabric/${target.minecraft}/client"))
+        }
+        server {
+            server()
+            runDir = rootProject.file(providers.gradleProperty('smokeGameDirectory').getOrElse("run/fabric/${target.minecraft}/server"))
+            programArgs '--nogui'
+            vmArg "-Dbetterbees.upgradeValidation=${providers.gradleProperty('upgradeValidation').getOrElse('false')}"
+            vmArg "-Dbetterbees.upgradeRequireExisting=${providers.gradleProperty('upgradeRequireExisting').getOrElse('false')}"
+        }
     }
 }
 
@@ -156,7 +168,10 @@ fabricApi {
 }
 
 providers.gradleProperty('upgradeGameDirectory').orNull?.with { directory ->
-    loom.runs.named('gameTest').configure { runDir = file(directory) }
+    loom.runs.named('gameTest').configure {
+        runDir = file(directory)
+        vmArg "-Dbetterbees.upgradeRequireExisting=${providers.gradleProperty('upgradeRequireExisting').getOrElse('false')}"
+    }
 }
 
 def generateFabricGameTests = tasks.register('generateFabricGameTests') {
@@ -211,9 +226,11 @@ if (useQuilt) {
     // Quilt uses its own development-mode property; Loom already publishes the source-set mod groups.
     loom.runs.named('client').configure {
         defaultMainClass 'org.quiltmc.loader.impl.launch.knot.KnotClient'
+        vmArg '-Dloader.development=true'
     }
     loom.runs.named('server').configure {
         defaultMainClass 'org.quiltmc.loader.impl.launch.knot.KnotServer'
+        vmArg '-Dloader.development=true'
     }
     loom.runs.named('gameTest').configure {
         defaultMainClass 'org.quiltmc.loader.impl.launch.knot.KnotServer'

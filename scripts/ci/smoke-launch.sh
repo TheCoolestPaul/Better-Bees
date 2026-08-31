@@ -13,42 +13,23 @@ loader_version="$4"
 timeout_seconds="${SMOKE_TIMEOUT_SECONDS:-240}"
 
 case "$mode" in
-  server)
-    gradle_task=":${project}:runServer"
-    markers=('Done \([0-9.]+s\)! For help')
-    ;;
-  client)
-    gradle_task=":${project}:runClient"
-    markers=(
-      'Reloading ResourceManager:.*mod/betterbees'
-      'textures/atlas/blocks.png-atlas'
-      'textures/atlas/gui.png-atlas'
-    )
-    ;;
-  *)
-    echo "Unknown smoke mode: $mode" >&2
-    exit 2
-    ;;
+  server) gradle_task=":${project}:runServer" ;;
+  client) gradle_task=":${project}:runClient" ;;
+  *) echo "Unknown smoke mode: $mode" >&2; exit 2 ;;
 esac
-
+jade=false
 for argument in "${@:5}"; do
-  if [[ "$argument" == "-PwithJade=true" ]]; then
-    markers+=('com\.betterbees\.compat\.jade\.BetterBeesJadePlugin')
-    break
-  fi
+  [[ "$argument" != "-PwithJade=true" ]] || jade=true
 done
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 mkdir -p build/smoke run
-log_file="build/smoke/${mode}-${platform}-${project}-${loader_version}.log"
+log_file="build/smoke/${mode}-${platform}-${project}-${loader_version}-jade-${jade}.log"
+run_dir="$repo_root/build/smoke/runs/${mode}-${platform}-${project}-${loader_version}-jade-${jade}"
+mkdir -p "$run_dir"
 if [[ "$mode" == "server" ]]; then
-  minecraft_version="${project#fabricMc}"
-  minecraft_version="${minecraft_version#mc}"
-  minecraft_version="${minecraft_version//_/.}"
-  if [[ "$platform" == neoforge ]]; then run_dir="run/${minecraft_version}/server"; else run_dir="run/fabric/${minecraft_version}/server"; fi
-  mkdir -p "$run_dir"
   printf 'eula=true\n' > "$run_dir/eula.txt"
 fi
 
@@ -58,6 +39,23 @@ case "$platform" in
   quilt) loader_args=("-Pfabric_target=${project}" -PwithQuilt=true "-Pquilt_loader_version=${loader_version}") ;;
   *) echo "Unknown platform: $platform" >&2; exit 2 ;;
 esac
+loader_args+=("-PsmokeGameDirectory=$run_dir")
+# Resolve assets before starting the bounded launch. Retry only this task, once,
+# and only when Gradle identifies an asset task failure (not compilation/configuration).
+if [[ "$mode" == client ]]; then
+  asset_log="${log_file%.log}-assets.log"
+  for attempt in 1 2; do
+    attempt_log="${asset_log%.log}-${attempt}.log"
+    if ./gradlew --no-daemon "${loader_args[@]}" "${@:5}" ":${project}:downloadAssets" >"$attempt_log" 2>&1; then
+      break
+    fi
+    cat "$attempt_log" >&2
+    if [[ "$attempt" == 2 ]] || ! grep -Eq "Execution failed for task .*:downloadAssets'" "$attempt_log"; then
+      exit 1
+    fi
+    echo 'Asset download failed; retrying asset preparation once' >&2
+  done
+fi
 command=(./gradlew --no-daemon "${loader_args[@]}" "${@:5}" "$gradle_task")
 if [[ "$mode" == "client" ]]; then
   # Hosted runners have no physical audio device. OpenAL's null backend keeps
@@ -70,38 +68,42 @@ cleanup() {
   if [[ -n "$smoke_pid" ]] && kill -0 "$smoke_pid" 2>/dev/null; then
     kill -- "-$smoke_pid" 2>/dev/null || kill "$smoke_pid" 2>/dev/null || true
     for _ in {1..10}; do
-      kill -0 "$smoke_pid" 2>/dev/null || return
+      kill -0 "$smoke_pid" 2>/dev/null || return 0
       sleep 1
     done
     kill -KILL -- "-$smoke_pid" 2>/dev/null || kill -KILL "$smoke_pid" 2>/dev/null || true
   fi
+  return 0
 }
 trap cleanup EXIT INT TERM
 
 echo "Starting Better Bees $mode smoke test for $project on $platform $loader_version"
+: >"$log_file"
 setsid "${command[@]}" >"$log_file" 2>&1 &
 smoke_pid=$!
 deadline=$((SECONDS + timeout_seconds))
 
-fatal_pattern='Mixin apply failed|MixinApplyError|InvalidMixinException|InjectionError|Exception in thread "main"|MOD LOADING ERROR|Failed to create mod instance|Duplicate UID|Error loading plugin at com\.betterbees\.compat\.jade|Caught unhandled exception'
-
+check_args=("$log_file" "$mode" "$platform")
+[[ "$jade" == false ]] || check_args+=(--jade)
+healthy_since=-1
+diagnostic='Waiting for launch output'
 while (( SECONDS < deadline )); do
-  if grep -Eiq "$fatal_pattern" "$log_file"; then
-    echo "Fatal launch error detected in $log_file" >&2
+  status=0
+  diagnostic="$(python3 scripts/ci/check-smoke.py "${check_args[@]}")" || status=$?
+  if [[ "$status" != 0 && "$status" != 1 ]]; then
+    echo "$diagnostic" >&2
     tail -n 200 "$log_file" >&2
     exit 1
   fi
-
-  healthy=true
-  for marker in "${markers[@]}"; do
-    if ! grep -Eq "$marker" "$log_file"; then
-      healthy=false
-      break
+  if [[ "$status" == 0 ]]; then
+    # Allow deferred initialization errors to surface before accepting startup.
+    if (( healthy_since < 0 )); then healthy_since=$SECONDS; fi
+    if (( SECONDS - healthy_since >= 5 )) && kill -0 "$smoke_pid" 2>/dev/null; then
+      echo "Better Bees $mode reached a healthy initialized state on $platform $loader_version"
+      exit 0
     fi
-  done
-  if [[ "$healthy" == true ]]; then
-    echo "Better Bees $mode reached a healthy initialized state on $platform $loader_version"
-    exit 0
+  else
+    healthy_since=-1
   fi
 
   if ! kill -0 "$smoke_pid" 2>/dev/null; then
@@ -113,6 +115,6 @@ while (( SECONDS < deadline )); do
   sleep 2
 done
 
-echo "Timed out after ${timeout_seconds}s waiting for $mode initialization" >&2
+echo "Timed out after ${timeout_seconds}s waiting for $mode initialization: $diagnostic" >&2
 tail -n 200 "$log_file" >&2
 exit 1

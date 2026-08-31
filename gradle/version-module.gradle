@@ -166,17 +166,20 @@ neoForge {
     runs {
         client {
             client()
-            gameDirectory = rootProject.file("run/${target.minecraft}/client")
+            gameDirectory = rootProject.file(providers.gradleProperty('smokeGameDirectory').getOrElse("run/${target.minecraft}/client"))
             systemProperty 'neoforge.enabledGameTestNamespaces', rootProject.mod_id
         }
         server {
             server()
-            gameDirectory = rootProject.file("run/${target.minecraft}/server")
+            gameDirectory = rootProject.file(providers.gradleProperty('smokeGameDirectory').getOrElse("run/${target.minecraft}/server"))
             programArgument '--nogui'
+            systemProperty 'betterbees.upgradeValidation', providers.gradleProperty('upgradeValidation').getOrElse('false')
+            systemProperty 'betterbees.upgradeRequireExisting', providers.gradleProperty('upgradeRequireExisting').getOrElse('false')
             systemProperty 'neoforge.enabledGameTestNamespaces', rootProject.mod_id
         }
         gameTestServer {
             type = 'gameTestServer'
+            systemProperty 'betterbees.upgradeRequireExisting', providers.gradleProperty('upgradeRequireExisting').getOrElse('false')
             gameDirectory = providers.gradleProperty('upgradeGameDirectory')
                     .map { rootProject.file(it) }
                     .getOrElse(rootProject.file("run/${target.minecraft}/gametest"))

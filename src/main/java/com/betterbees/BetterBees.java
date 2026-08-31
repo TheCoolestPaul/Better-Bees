@@ -26,10 +26,12 @@ public final class BetterBees {
         VersionHooks.registerGameTests(modBus);
         container.registerConfig(ModConfig.Type.SERVER, BetterBeesConfig.SPEC);
         NeoForge.EVENT_BUS.addListener(this::serverStarted);
+        LOGGER.info("Better Bees initialization complete");
     }
 
     private void serverStarted(ServerStartedEvent event) {
         BetterBeesConfig.refreshSnapshot();
+        com.betterbees.validation.UpgradeFixture.runIfRequested(event.getServer());
         LOGGER.info(
                 "Better Bees active: hive capacity={}, honey capacity={}, harvest cost={}, shears honeycomb={}-{}, indoor breeding={}, interval={} ticks, chance={}, flower scan budget={}, flower cache size={}, hive path failures={}, bee scale={}-{}.",
                 BetterBeesConfig.hiveCapacity(),

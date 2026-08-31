@@ -19,10 +19,22 @@ def matrix(kind):
     rows = []
     for minecraft, target in TARGETS.items():
         common = {"minecraft": minecraft, "java": str(target["java"])}
-        if kind == "neo":
+        if kind == "validation":
+            for platform in ("neoforge", "fabric", "quilt"):
+                if platform == "quilt" and not target.get("quiltSupported", True):
+                    continue
+                neo = platform == "neoforge"
+                loader_key = {"neoforge": "neo", "fabric": "fabricLoader", "quilt": "quiltLoader"}[platform]
+                for endpoint in ("Floor", "Latest"):
+                    rows.append({
+                        **common, "platform": platform, "endpoint": endpoint.lower(),
+                        "project": target["project" if neo else "fabricProject"],
+                        "loader": target[loader_key + endpoint],
+                        "api": "" if neo else target["fabricApi" + endpoint],
+                        "jade": target["jadeLatest" if neo else "fabricJadeLatest"],
+                    })
+        elif kind == "neo":
             versions = endpoint_values(target, "neoFloor", "neoLatest")
-            if minecraft == "1.21.1":
-                versions = list(dict.fromkeys([target["neoFloor"], "21.1.50", "21.1.213", target["neoLatest"]]))
             rows += [{**common, "project": target["project"], "neo": version} for version in versions]
         elif kind == "neo-jade":
             rows += [
@@ -75,6 +87,6 @@ def matrix(kind):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("kind", choices=("neo", "neo-jade", "fabric", "quilt", "fabric-jade", "package"))
+    parser.add_argument("kind", choices=("validation", "neo", "neo-jade", "fabric", "quilt", "fabric-jade", "package"))
     args = parser.parse_args()
     print(json.dumps({"include": matrix(args.kind)}, separators=(",", ":")))
