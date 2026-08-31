@@ -1,5 +1,6 @@
 package com.betterbees.ai.tasks;
 
+import com.betterbees.ai.NavigationBudget;
 import com.betterbees.ai.BeeAi;
 import com.betterbees.config.BetterBeesConfig;
 import com.betterbees.registry.ModMemoryTypes;
@@ -80,7 +81,7 @@ public final class GoToHiveTask extends Behavior<Bee> {
         }
         Path path = bee.getNavigation().getPath();
         Path last = bee.getBrain().getMemory(ModMemoryTypes.LAST_PATH.get()).orElse(null);
-        if (path != null && last != null && path.sameAs(last)) {
+        if (path != null && last != null && (path == last || path.sameAs(last))) {
             int stuck = bee.getBrain().getMemory(ModMemoryTypes.STUCK_TICKS.get()).orElse(0) + 1;
             bee.getBrain().setMemory(ModMemoryTypes.STUCK_TICKS.get(), stuck);
             if (stuck > 600) memory.betterbees$dropAndBlacklistHive(bee);
@@ -91,8 +92,8 @@ public final class GoToHiveTask extends Behavior<Bee> {
     }
 
     private static boolean pathTo(Bee bee, BlockPos home) {
-        bee.getNavigation().setMaxVisitedNodesMultiplier(10.0F);
-        bee.getNavigation().moveTo(home.getX(), home.getY(), home.getZ(), 1.0);
+        NavigationBudget.moveTo(bee.getNavigation(), 10.0F,
+                home.getX(), home.getY(), home.getZ(), 1.0);
         Path path = bee.getNavigation().getPath();
         return path != null && path.canReach();
     }

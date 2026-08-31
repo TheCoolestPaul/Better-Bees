@@ -24,12 +24,20 @@ public final class BeePathfindingTask extends Behavior<Bee> {
 
     @Override
     protected boolean checkExtraStartConditions(ServerLevel level, Bee bee) {
-        return bee.getNavigation().isDone() && bee.getRandom().nextInt(10) == 0;
+        return !returningHome(bee) && bee.getNavigation().isDone() && bee.getRandom().nextInt(10) == 0;
     }
 
     @Override
     protected boolean canStillUse(ServerLevel level, Bee bee, long gameTime) {
-        return bee.getNavigation().isInProgress();
+        return !returningHome(bee) && bee.getNavigation().isInProgress();
+    }
+
+    private static boolean returningHome(Bee bee) {
+        BlockPos home = ((HiveMemory) bee).betterbees$getMemorizedHome();
+        Entity leashHolder = bee.getLeashHolder();
+        return home != null && bee.getBrain().getMemory(ModMemoryTypes.WANTS_HIVE.get()).orElse(false)
+                && !bee.getBrain().hasMemoryValue(ModMemoryTypes.COOLDOWN_LOCATE_HIVE.get())
+                && (leashHolder == null || home.closerToCenterThan(leashHolder.position(), 5.5D));
     }
 
     @Override

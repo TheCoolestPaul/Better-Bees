@@ -1,5 +1,7 @@
 package com.betterbees.ai.tasks;
 
+import com.betterbees.ai.NavigationBudget;
+import com.betterbees.hive.HiveSafetyService;
 import com.betterbees.config.BetterBeesConfig;
 import com.betterbees.hive.HiveFlowerIndex;
 import com.betterbees.hive.HiveFlowerService;
@@ -142,7 +144,7 @@ public final class FindFlowerTask extends Behavior<Bee> {
 
     private static BlockPos usableSharedHome(ServerLevel level, Bee bee) {
         BlockPos home = ((HiveMemory) bee).betterbees$getMemorizedHome();
-        if (home == null || !(level.getBlockEntity(home) instanceof BeehiveBlockEntity)) return null;
+        if (HiveSafetyService.loadedHive(level, home) == null) return null;
         Entity leashHolder = bee.getLeashHolder();
         return leashHolder == null || home.closerToCenterThan(leashHolder.position(), 5.5D) ? home : null;
     }
@@ -162,8 +164,7 @@ public final class FindFlowerTask extends Behavior<Bee> {
         int vertical = distance < 15 ? Math.max(1, distance / 2) : 8;
         Vec3 next = AirRandomPos.getPosTowards(bee, horizontal, vertical, yAdjust, targetVec, (float) Math.PI / 10.0F);
         if (next != null) {
-            bee.getNavigation().setMaxVisitedNodesMultiplier(0.5F);
-            bee.getNavigation().moveTo(next.x, next.y, next.z, 0.6D);
+            NavigationBudget.moveTo(bee.getNavigation(), 0.5F, next.x, next.y, next.z, 0.6D);
         }
         Path path = bee.getNavigation().getPath();
         return path != null && path.canReach();

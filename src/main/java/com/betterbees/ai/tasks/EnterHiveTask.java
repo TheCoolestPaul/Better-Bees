@@ -1,5 +1,6 @@
 package com.betterbees.ai.tasks;
 
+import com.betterbees.hive.HiveSafetyService;
 import com.betterbees.ai.BeeAi;
 import com.betterbees.registry.ModMemoryTypes;
 import com.betterbees.util.HiveMemory;
@@ -21,10 +22,11 @@ public final class EnterHiveTask extends Behavior<Bee> {
     protected boolean checkExtraStartConditions(ServerLevel level, Bee bee) {
         BlockPos home = ((HiveMemory) bee).betterbees$getMemorizedHome();
         if (home == null || !bee.getBrain().getMemory(ModMemoryTypes.WANTS_HIVE.get()).orElse(false)
-                || BeeAi.isHiveNearFire(level, bee) || !home.closerToCenterThan(bee.position(), 2.0)) {
+                || !home.closerToCenterThan(bee.position(), 2.0) || BeeAi.isHiveNearFire(level, bee)) {
             return false;
         }
-        if (!(level.getBlockEntity(home) instanceof BeehiveBlockEntity hive)) {
+        BeehiveBlockEntity hive = HiveSafetyService.loadedHive(level, home);
+        if (hive == null) {
             ((HiveMemory) bee).betterbees$dropHive(bee);
             return false;
         }
@@ -43,7 +45,9 @@ public final class EnterHiveTask extends Behavior<Bee> {
     @Override
     protected void start(ServerLevel level, Bee bee, long gameTime) {
         BlockPos home = ((HiveMemory) bee).betterbees$getMemorizedHome();
-        if (home != null && level.getBlockEntity(home) instanceof BeehiveBlockEntity hive && !hive.isFull()) {
+        BeehiveBlockEntity hive = HiveSafetyService.loadedHive(level, home);
+        if (hive != null && !hive.isFull()
+                && !HiveSafetyService.scanLoadedNeighborhood(level, home)) {
             hive.addOccupant(bee);
         }
     }

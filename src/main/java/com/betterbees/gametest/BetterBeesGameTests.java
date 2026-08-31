@@ -1,5 +1,13 @@
 package com.betterbees.gametest;
 
+import com.betterbees.util.HiveMemory;
+import com.betterbees.mixin.PathNavigationAccessor;
+import com.betterbees.ai.tasks.BeePathfindingTask;
+import com.betterbees.ai.tasks.EnterHiveTask;
+import com.betterbees.ai.NavigationBudget;
+import com.betterbees.hive.HiveSafetyService;
+import com.betterbees.hive.HiveRuntimeState;
+import com.betterbees.hive.HiveRuntimeAccess;
 import com.betterbees.BetterBees;
 import com.betterbees.ai.BeeAi;
 import com.betterbees.config.BetterBeesConfig;
@@ -46,6 +54,146 @@ public final class BetterBeesGameTests {
     private static final BlockPos HIVE_POS = new BlockPos(1, 1, 1);
 
     private BetterBeesGameTests() {}
+
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void sixtyBeesReturnToThreeHives(GameTestHelper helper) {
+        java.util.List<BeehiveBlockEntity> hives = new java.util.ArrayList<>();
+        java.util.List<Bee> returning = new java.util.ArrayList<>();
+        for (int column = 0; column < 3; column++) {
+            BlockPos relative = new BlockPos(column + 4, 1, 4);
+            helper.setBlock(relative, Blocks.BEEHIVE);
+            BeehiveBlockEntity hive = VersionHooks.getBlockEntity(helper, relative, BeehiveBlockEntity.class);
+            hives.add(hive);
+            BlockPos home = hive.getBlockPos();
+            for (int occupant = 0; occupant < 20; occupant++) {
+                Bee bee = VersionHooks.createBee(helper.getLevel());
+                VersionHooks.assertTrue(helper, bee != null, "returning bee should be constructible");
+                // Keep this navigation fixture's population fixed while normal breeding remains enabled elsewhere.
+                bee.setAge(1_000);
+                // Start just outside entry range, with a small grid rather than 20 overlapping hitboxes.
+                VersionHooks.moveTo(bee, home.getX() + 0.5D + (occupant % 5 - 2) * 0.3D,
+                        home.getY() + 2.6D, home.getZ() + 0.5D + (occupant / 5 - 1.5D) * 0.3D);
+                ((HiveMemory) bee).betterbees$setMemorizedHome(home);
+                bee.getBrain().setMemory(ModMemoryTypes.WANTS_HIVE.get(), true);
+                bee.getBrain().setMemory(ModMemoryTypes.POLLINATING_COOLDOWN.get(), 400);
+                helper.getLevel().addFreshEntity(bee);
+                returning.add(bee);
+            }
+        }
+        helper.runAfterDelay(390, () -> returning.stream().filter(Bee::isAlive).limit(6).forEach(bee ->
+                BetterBees.LOGGER.warn("Return test pending: pos={}, home={}, wantsHive={}, navigationDone={}, locateCooldown={}",
+                        bee.position(), ((HiveMemory) bee).betterbees$getMemorizedHome(),
+                        bee.getBrain().getMemory(ModMemoryTypes.WANTS_HIVE.get()), bee.getNavigation().isDone(),
+                        bee.getBrain().getMemory(ModMemoryTypes.COOLDOWN_LOCATE_HIVE.get()))));
+        helper.succeedWhen(() -> {
+            for (BeehiveBlockEntity hive : hives) {
+                VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 20, "all nestmates must finish return-home navigation");
+            }
+        });
+    }
+
+    @GameTest(template = "empty")
+    public static void entryRechecksFireAfterSharedSafeResult(GameTestHelper helper) {
+        BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
+        BlockPos home = hive.getBlockPos();
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, bee != null, "bee should be constructible");
+        VersionHooks.moveTo(bee, home.getX() + 0.5D, home.getY(), home.getZ() + 0.5D);
+        ((HiveMemory) bee).betterbees$setMemorizedHome(home);
+        bee.getBrain().setMemory(ModMemoryTypes.WANTS_HIVE.get(), true);
+        VersionHooks.assertFalse(helper, BeeAi.isHiveNearFire(helper.getLevel(), bee), "initially safe hive");
+        helper.getLevel().setBlock(home.above(), Blocks.FIRE.defaultBlockState(), 2);
+        VersionHooks.assertFalse(helper, BeeAi.isHiveNearFire(helper.getLevel(), bee), "AI shares this tick's snapshot");
+        VersionHooks.assertTrue(helper, hive.isFireNearby(), "vanilla fire checks remain uncached");
+        new EnterHiveTask().tryStart(helper.getLevel(), bee, helper.getLevel().getGameTime());
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 0, "fresh entry check must reject new fire");
+        VersionHooks.assertTrue(helper, bee.isAlive(), "rejected entrant remains alive");
+        helper.getLevel().setBlock(home.above(), Blocks.AIR.defaultBlockState(), 2);
+        new EnterHiveTask().tryStart(helper.getLevel(), bee, helper.getLevel().getGameTime());
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 1, "safe return still enters normally");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void replacementHiveDoesNotReuseFireCache(GameTestHelper helper) {
+        BeehiveBlockEntity original = placeHive(helper, Blocks.BEEHIVE);
+        HiveRuntimeState oldState = ((HiveRuntimeAccess) original).betterbees$getRuntimeState();
+        oldState.fireNearby(helper.getLevel().getGameTime(), () -> true);
+        helper.setBlock(HIVE_POS, Blocks.AIR);
+        BeehiveBlockEntity replacement = placeHive(helper, Blocks.BEEHIVE);
+        VersionHooks.assertTrue(helper, oldState != ((HiveRuntimeAccess) replacement).betterbees$getRuntimeState(),
+                "replacement hive owns fresh transient state");
+        VersionHooks.assertFalse(helper, HiveSafetyService.isFireNearby(helper.getLevel(), replacement),
+                "replacement hive must be scanned");
+        BlockPos unloaded = new BlockPos(30_000_000, 100, 30_000_000);
+        VersionHooks.assertTrue(helper, HiveSafetyService.loadedHive(helper.getLevel(), unloaded) == null,
+                "unloaded hive must not be resolved");
+        VersionHooks.assertFalse(helper, helper.getLevel().hasChunkAt(unloaded), "validation must not load the chunk");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void pathRequestsRestoreBudgetAndReturnBlocksWandering(GameTestHelper helper) {
+        BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, bee != null, "bee should be constructible");
+        BlockPos home = hive.getBlockPos();
+        VersionHooks.moveTo(bee, home.getX() + 2.5D, home.getY(), home.getZ() + 0.5D);
+        bee.getNavigation().setMaxVisitedNodesMultiplier(0.75F);
+        for (float budget : new float[]{10.0F, 0.5F}) {
+            NavigationBudget.moveTo(bee.getNavigation(), budget, home.getX(), home.getY(), home.getZ(), 1.0D);
+            VersionHooks.assertValueEqual(helper,
+                    ((PathNavigationAccessor) bee.getNavigation()).betterbees$getMaxVisitedNodesMultiplier(),
+                    0.75F, "each request restores the previous navigation budget");
+            bee.getNavigation().stop();
+        }
+        ((HiveMemory) bee).betterbees$setMemorizedHome(home);
+        bee.getBrain().setMemory(ModMemoryTypes.WANTS_HIVE.get(), true);
+        for (int attempt = 0; attempt < 100; attempt++) {
+            VersionHooks.assertFalse(helper, new BeePathfindingTask()
+                    .tryStart(helper.getLevel(), bee, helper.getLevel().getGameTime()), "idle wander must not compete with return home");
+        }
+        // Vanilla rate-limits recomputation for the first 20 world ticks.
+        helper.runAfterDelay(21, () -> {
+            NavigationBudget.moveTo(bee.getNavigation(), 10.0F, home.getX(), home.getY(), home.getZ(), 1.0D);
+            bee.getNavigation().recomputePath();
+            VersionHooks.assertValueEqual(helper,
+                    ((PathNavigationAccessor) bee.getNavigation()).betterbees$getMaxVisitedNodesMultiplier(),
+                    0.75F, "block-update recalculation restores the previous navigation budget");
+            VersionHooks.assertTrue(helper, bee.getNavigation().getPath() != null
+                    && bee.getNavigation().getPath().canReach(), "recalculation still reaches the home");
+            bee.discard();
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty")
+    public static void soundThrottlePreservesEntryAndEmergencyRelease(GameTestHelper helper) {
+        BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
+        HiveHoneyService.set(hive, 7);
+        fillByEntry(helper, hive, BetterBeesConfig.hiveCapacity());
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), BetterBeesConfig.hiveCapacity(), "all entrants stored despite sound throttle");
+        if (BetterBeesConfig.hiveTransitionIntervalTicks() > 0) {
+            VersionHooks.assertFalse(helper, ((HiveRuntimeAccess) hive).betterbees$getRuntimeState()
+                    .allowTransitionSound(helper.getLevel().getGameTime(), BetterBeesConfig.hiveTransitionIntervalTicks()),
+                    "actual entry playback must consume the hive sound budget");
+        }
+        hive.emptyAllLivingFromHive(null, hive.getBlockState(), BeehiveBlockEntity.BeeReleaseStatus.EMERGENCY);
+        VersionHooks.assertValueEqual(helper, hive.getOccupantCount(), 0, "emergency release bypasses no entity operations");
+        VersionHooks.assertValueEqual(helper, HiveOverlayData.from(hive).honey(), 7, "sound throttling leaves honey untouched");
+        // A block removed before evacuation still owns its cooldown until the synchronous release finishes.
+        BeehiveBlockEntity detached = new BeehiveBlockEntity(hive.getBlockPos(), hive.getBlockState());
+        detached.setLevel(helper.getLevel());
+        fill(helper, detached, 20);
+        detached.emptyAllLivingFromHive(null, detached.getBlockState(), BeehiveBlockEntity.BeeReleaseStatus.EMERGENCY);
+        VersionHooks.assertValueEqual(helper, detached.getOccupantCount(), 0, "detached hive evacuates every bee");
+        if (BetterBeesConfig.hiveTransitionIntervalTicks() > 0) {
+            VersionHooks.assertFalse(helper, ((HiveRuntimeAccess) detached).betterbees$getRuntimeState()
+                    .allowTransitionSound(helper.getLevel().getGameTime(), BetterBeesConfig.hiveTransitionIntervalTicks()),
+                    "evacuation uses its owner's budget, even when another hive occupies the same position");
+        }
+        helper.succeed();
+    }
 
     @GameTest(template = "empty")
     public static void beehiveAcceptsConfiguredCapacity(GameTestHelper helper) {

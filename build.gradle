@@ -43,6 +43,31 @@ tasks.named('clean') {
 
 tasks.named('check') {
     dependsOn(versionProjects.collect { it.tasks.named('check') })
+    dependsOn 'performancePolicyTest'
+}
+
+def policyClasses = layout.buildDirectory.dir('performancePolicyClasses')
+tasks.register('compilePerformancePolicyTest', JavaCompile) {
+    sourceCompatibility = '21'
+    targetCompatibility = '21'
+    javaCompiler = project(':mc1_21_1').javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    source files('src/main/java/com/betterbees/hive/HiveRuntimeState.java',
+            'src/main/java/com/betterbees/audio/BeeLoopSelector.java',
+            'src/test/java/com/betterbees/PerformancePolicyTest.java')
+    classpath = files()
+    destinationDirectory = policyClasses
+    options.release = 21
+}
+tasks.register('performancePolicyTest', JavaExec) {
+    group = 'verification'
+    dependsOn 'compilePerformancePolicyTest'
+    classpath = files(policyClasses)
+    mainClass = 'com.betterbees.PerformancePolicyTest'
+    javaLauncher = project(':mc1_21_1').javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 idea.project.languageLevel = '25'

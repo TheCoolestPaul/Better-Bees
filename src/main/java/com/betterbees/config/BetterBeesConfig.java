@@ -22,6 +22,7 @@ public final class BetterBeesConfig {
     private static final ModConfigSpec.DoubleValue BREEDING_CHANCE;
     private static final ModConfigSpec.DoubleValue MINIMUM_BEE_SCALE;
     private static final ModConfigSpec.DoubleValue MAXIMUM_BEE_SCALE;
+    private static final ModConfigSpec.IntValue HIVE_TRANSITION_INTERVAL_TICKS;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -99,6 +100,11 @@ public final class BetterBeesConfig {
                 .defineInRange("maximum_bee_scale", 0.35D, 0.0625D, 1.0D);
         builder.pop();
 
+        builder.push("audio");
+        HIVE_TRANSITION_INTERVAL_TICKS = builder
+                .comment("Minimum ticks between combined entry/exit sounds per hive. 0 restores unrestricted sound playback; bee timing is unchanged.")
+                .worldRestart().defineInRange("hive_transition_interval_ticks", 5, 0, 100);
+        builder.pop();
         SPEC = builder.build();
     }
 
@@ -111,10 +117,11 @@ public final class BetterBeesConfig {
                 HIVE_CAPACITY.getAsInt(), HONEY_CAPACITY.getAsInt(), HARVEST_COST.getAsInt(),
                 SHEARS_HONEYCOMB_MIN.getAsInt(), SHEARS_HONEYCOMB_MAX.getAsInt(), INDOOR_BREEDING_ENABLED.getAsBoolean(),
                 BREEDING_INTERVAL_TICKS.getAsInt(), BREEDING_CHANCE.getAsDouble(),
-                MINIMUM_BEE_SCALE.getAsDouble(), MAXIMUM_BEE_SCALE.getAsDouble());
+                MINIMUM_BEE_SCALE.getAsDouble(), MAXIMUM_BEE_SCALE.getAsDouble(), HIVE_TRANSITION_INTERVAL_TICKS.getAsInt());
     }
 
     public static ConfigSnapshot snapshot() { return snapshot; }
+    public static int hiveTransitionIntervalTicks() { return snapshot.hiveTransitionIntervalTicks(); }
     public static int maxWanderRadius() { return snapshot.maxWanderRadius(); }
     public static int flowerLocateRange() { return snapshot.flowerLocateRange(); }
     public static int searchAttempts() { return snapshot.searchAttempts(); }

@@ -1,5 +1,6 @@
 package com.betterbees.mixin;
 
+import com.betterbees.hive.HiveSafetyService;
 import com.betterbees.ai.BeeAi;
 import com.betterbees.config.BetterBeesConfig;
 import com.betterbees.registry.ModMemoryTypes;
@@ -115,9 +116,9 @@ public abstract class BeeMixin extends Animal implements HiveMemory, BeePersiste
         if (!getBrain().hasMemoryValue(ModMemoryTypes.COOLDOWN_LOCATE_HIVE.get())) {
             getBrain().eraseMemory(ModMemoryTypes.HIVE_BLACKLIST.get());
         }
+        BeehiveBlockEntity homeHive = HiveSafetyService.loadedHive((ServerLevel) level(), betterbees$memorizedHome);
         boolean abandonedUnsafeHive = betterbees$memorizedHome != null
-                && (!(level().getBlockEntity(betterbees$memorizedHome) instanceof BeehiveBlockEntity)
-                || BeeAi.isHiveNearFire((ServerLevel) level(), bee));
+                && (homeHive == null || HiveSafetyService.isFireNearby((ServerLevel) level(), homeHive));
         if (abandonedUnsafeHive) {
             betterbees$dropAndBlacklistHive(bee);
             getBrain().eraseMemory(ModMemoryTypes.WANTS_HIVE.get());

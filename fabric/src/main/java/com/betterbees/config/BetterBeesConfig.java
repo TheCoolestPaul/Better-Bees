@@ -37,7 +37,8 @@ public final class BetterBeesConfig {
                         integer(config, "hive.breeding_interval_ticks", defaults.breedingIntervalTicks(), 20, 72000),
                         decimal(config, "hive.breeding_chance", defaults.breedingChance(), 0.0D, 1.0D),
                         decimal(config, "appearance.minimum_bee_scale", defaults.configuredMinimumBeeScale(), 0.0625D, 1.0D),
-                        decimal(config, "appearance.maximum_bee_scale", defaults.configuredMaximumBeeScale(), 0.0625D, 1.0D));
+                        decimal(config, "appearance.maximum_bee_scale", defaults.configuredMaximumBeeScale(), 0.0625D, 1.0D),
+                        integer(config, "audio.hive_transition_interval_ticks", defaults.hiveTransitionIntervalTicks(), 0, 100));
                 config.save();
             }
         } catch (Exception exception) {
@@ -67,6 +68,7 @@ public final class BetterBeesConfig {
     }
 
     public static ConfigSnapshot snapshot() { return snapshot; }
+    public static int hiveTransitionIntervalTicks() { return snapshot.hiveTransitionIntervalTicks(); }
     public static int maxWanderRadius() { return snapshot.maxWanderRadius(); }
     public static int flowerLocateRange() { return snapshot.flowerLocateRange(); }
     public static int searchAttempts() { return snapshot.searchAttempts(); }

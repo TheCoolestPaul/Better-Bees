@@ -81,6 +81,34 @@ Settings require a restart.
 | `hive.breeding_chance` | 0.05 | 0.0-1.0 |
 | `appearance.minimum_bee_scale` | 0.20 | 0.0625-1.0 |
 | `appearance.maximum_bee_scale` | 0.35 | 0.0625-1.0 |
+| `audio.hive_transition_interval_ticks` | 5 | 0-100 |
+
+Hive entry and exit share one sound cooldown per loaded hive. The first sound plays
+immediately; duplicates within the interval are discarded. This does not delay bees,
+honey deposits, emergency releases, or block-change game events. Set the interval to
+`0` to restore unrestricted entry/exit playback.
+
+Clients also create `config/betterbees-client.toml` on both loaders. Restart the client
+after changing these local settings:
+
+| Setting | Default | Range |
+| --- | ---: | --- |
+| `audio.adaptive_bee_sounds` | true | boolean |
+| `audio.max_bee_loops` | 8 | 1-64 |
+
+Adaptive audio selects nearby audible bees every five client ticks, prioritizes angry
+bees, and retains existing loops unless another bee is meaningfully closer. Bees that
+were suppressed can become audible again as the listener moves. Selected loops retain
+vanilla position, pitch, and volume behavior. Hurt, sting, death, harvesting, and
+pollination sounds are unchanged. Disable adaptation to restore vanilla buzzing.
+
+AI callers share a hive's fire scan within one tick; entry performs a fresh check and
+vanilla emergency fire checks remain uncached. Hive and flower path requests restore
+the previous pathfinding budget, and idle wandering cannot replace return-home paths.
+All caches are transient and require no world migration.
+
+See [performance validation](docs/performance-validation.md) for the automated checks,
+client listening checks, and the before/after measurement protocol.
 
 Indoor breeding needs two serialized adult bees with no age cooldown and one
 free slot. A successful roll adds one vanilla-aged baby, consumes no honey,
@@ -231,6 +259,8 @@ inject into the same Bee and beehive methods. Mods that replace beehive
 harvesting, honey-level handling, or dispenser shearing may also conflict.
 Mods that replace flower-search, hive-selection, or hive-travel AI may conflict
 with the collective-foraging behavior as well.
+Mods that replace bee loop admission or hive entry/exit sound calls may conflict
+with the adaptive audio hooks; adaptive buzzing can be disabled in the client config.
 
 ## World upgrades
 

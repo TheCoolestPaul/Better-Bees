@@ -13,10 +13,19 @@
     "BeehiveBlockEntityMixin",
     "BeehivePersistenceMixin",
     "BeehiveHoneyDepositMixin",
+    "BeehiveSoundMixin",
+    "BeehiveReleaseContextMixin",
+    "PathNavigationAccessor",
+    "HiveNavigationMixin",
     "BeehiveOccupantMixin",
     "DispenserBlockAccessor",
     "ShearsDispenseItemBehaviorMixin",
     "WalkNodeEvaluatorMixin"
+  ],
+  "client": [
+    "client.ClientBeeAudioMixin",
+    "client.BeeSoundAdmissionMixin",
+    "client.BeeSoundManagerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

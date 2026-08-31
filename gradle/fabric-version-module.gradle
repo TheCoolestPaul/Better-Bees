@@ -101,7 +101,7 @@ def generateFabricSources = tasks.register('generateFabricSources') {
         }
         sources.removeAll { relative, file -> relative.startsWith('com/betterbees/gametest/') }
         sources.each { relative, inputFile ->
-            def text = inputFile.getText('UTF-8')
+            def text = inputFile.getText('UTF-8').replace('\r\n', '\n')
             (target.sourceReplacements ?: [:]).each { oldText, newText -> text = text.replace(oldText, newText) }
             if (relative == 'com/betterbees/platform/VersionHooks.java') {
                 text = text.replaceAll('(?m)^import net\\.neoforged\\.bus\\.api\\.IEventBus;\\R', '')
@@ -182,7 +182,7 @@ def generateFabricGameTests = tasks.register('generateFabricGameTests') {
     inputs.property('sourceReplacements', (target.sourceReplacements ?: [:]).toString())
     outputs.file(outputFile)
     doLast {
-        def text = inputFile.getText('UTF-8')
+        def text = inputFile.getText('UTF-8').replace('\r\n', '\n')
         (target.sourceReplacements ?: [:]).each { oldText, newText -> text = text.replace(oldText, newText) }
         text = text.replaceAll('(?m)^import net\\.neoforged\\.neoforge\\.gametest\\.[^;]+;\\R', '')
                 .replaceAll('(?m)^@GameTestHolder\\([^\\r\\n]+\\)\\R', '')
@@ -191,7 +191,8 @@ def generateFabricGameTests = tasks.register('generateFabricGameTests') {
         if (target.modernGameTests) {
             text = text.replace('import net.minecraft.gametest.framework.GameTest;',
                     'import net.fabricmc.fabric.api.gametest.v1.GameTest;')
-                    .replace('@GameTest(template = "empty")', '@GameTest')
+                    .replace('@GameTest(template = "empty")', '@GameTest(maxTicks = 100)')
+                    .replace('@GameTest(template = "empty", timeoutTicks = 400)', '@GameTest(maxTicks = 400)')
                     .replace('public static void ', 'public void ')
         } else {
             text = text.replace('import net.minecraft.gametest.framework.GameTest;',
@@ -199,6 +200,7 @@ def generateFabricGameTests = tasks.register('generateFabricGameTests') {
                     .replace('public final class BetterBeesGameTests {',
                             'public final class BetterBeesGameTests implements FabricGameTest {')
                     .replace('@GameTest(template = "empty")', '@GameTest(template = FabricGameTest.EMPTY_STRUCTURE)')
+                    .replace('@GameTest(template = "empty", timeoutTicks = 400)', '@GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 400)')
         }
         def file = outputFile.get().asFile; file.parentFile.mkdirs(); file.setText(text, 'UTF-8')
     }

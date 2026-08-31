@@ -68,7 +68,7 @@ if (target.modernGameTests) {
         inputs.file(inputFile)
         outputs.file(outputFile)
         doLast {
-            def text = inputFile.getText('UTF-8')
+            def text = inputFile.getText('UTF-8').replace('\r\n', '\n')
                     .replaceAll('(?m)^import net\\.minecraft\\.gametest\\.framework\\.GameTest;\\R', '')
                     .replaceAll('(?m)^import net\\.neoforged\\.neoforge\\.gametest\\.GameTestHolder;\\R', '')
                     .replaceAll('(?m)^import net\\.neoforged\\.neoforge\\.gametest\\.PrefixGameTestTemplate;\\R', '')
@@ -106,7 +106,7 @@ if (target.sourceReplacements) {
                 }
             }
             sources.each { relative, inputFile ->
-                def text = inputFile.getText('UTF-8')
+                def text = inputFile.getText('UTF-8').replace('\r\n', '\n')
                 if (target.modernGameTests && relative == 'com/betterbees/gametest/BetterBeesGameTests.java') {
                     text = text.replaceAll('(?m)^import net\\.minecraft\\.gametest\\.framework\\.GameTest;\\R', '')
                             .replaceAll('(?m)^import net\\.neoforged\\.neoforge\\.gametest\\.GameTestHolder;\\R', '')
@@ -253,7 +253,8 @@ def generateGameTestStructure = tasks.register('generateGameTestStructure') {
             data.writeByte(10); data.writeUTF('')
             data.writeByte(3); data.writeUTF('DataVersion'); data.writeInt(3955)
             data.writeByte(9); data.writeUTF('size'); data.writeByte(3); data.writeInt(3)
-            data.writeInt(3); data.writeInt(3); data.writeInt(3)
+            // Keep neighboring hive/harvest fixtures outside one another's bee interaction range.
+            data.writeInt(32); data.writeInt(8); data.writeInt(32)
             data.writeByte(9); data.writeUTF('palette'); data.writeByte(10); data.writeInt(1)
             data.writeByte(8); data.writeUTF('Name'); data.writeUTF('minecraft:air'); data.writeByte(0)
             data.writeByte(9); data.writeUTF('blocks'); data.writeByte(10); data.writeInt(0)

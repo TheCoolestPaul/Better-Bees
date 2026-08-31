@@ -17,11 +17,12 @@ public record ConfigSnapshot(
         int breedingIntervalTicks,
         double breedingChance,
         double configuredMinimumBeeScale,
-        double configuredMaximumBeeScale
+        double configuredMaximumBeeScale,
+        int hiveTransitionIntervalTicks
 ) {
     public static ConfigSnapshot defaults() {
         return new ConfigSnapshot(25, 8, 10, 32, 512, 3, 20, 20, 1, 1, 3,
-                true, 1200, 0.05D, 0.20D, 0.35D);
+                true, 1200, 0.05D, 0.20D, 0.35D, 5);
     }
 
     public int harvestCost() { return Math.min(configuredHarvestCost, honeyCapacity); }

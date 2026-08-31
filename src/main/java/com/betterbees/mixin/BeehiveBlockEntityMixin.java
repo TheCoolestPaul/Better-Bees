@@ -1,5 +1,7 @@
 package com.betterbees.mixin;
 
+import com.betterbees.hive.HiveRuntimeState;
+import com.betterbees.hive.HiveRuntimeAccess;
 import com.betterbees.config.BetterBeesConfig;
 import com.betterbees.hive.HiveBreedingService;
 import com.betterbees.hive.HiveHoneyService;
@@ -25,7 +27,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(BeehiveBlockEntity.class)
-public abstract class BeehiveBlockEntityMixin extends BlockEntity implements HiveHoneyStorage, HiveFlowerKnowledge {
+public abstract class BeehiveBlockEntityMixin extends BlockEntity implements HiveHoneyStorage, HiveFlowerKnowledge, HiveRuntimeAccess {
+    @Unique private final HiveRuntimeState betterbees$runtimeState = new HiveRuntimeState();
+
+    @Override
+    public HiveRuntimeState betterbees$getRuntimeState() { return betterbees$runtimeState; }
     @Unique private static final String BETTERBEES_HONEY_TAG = "BetterBeesHoney";
     @Unique private boolean betterbees$loadingOccupants;
     @Unique private int betterbees$honey = -1;

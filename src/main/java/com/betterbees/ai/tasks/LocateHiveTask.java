@@ -1,5 +1,6 @@
 package com.betterbees.ai.tasks;
 
+import com.betterbees.hive.HiveSafetyService;
 import com.betterbees.config.BetterBeesConfig;
 import com.betterbees.registry.ModMemoryTypes;
 import com.betterbees.util.HiveMemory;
@@ -45,8 +46,8 @@ public final class LocateHiveTask extends Behavior<Bee> {
         while (records.hasNext()) {
             BlockPos pos = records.next().getPos();
             if (blacklist.contains(GlobalPos.of(level.dimension(), pos))) continue;
-            if (!(level.getBlockEntity(pos) instanceof BeehiveBlockEntity hive)
-                    || hive.isFull() || hive.isFireNearby()) continue;
+            BeehiveBlockEntity hive = HiveSafetyService.loadedHive(level, pos);
+            if (hive == null || hive.isFull() || HiveSafetyService.isFireNearby(level, hive)) continue;
 
             double distance = Math.sqrt(pos.distSqr(beePos));
             double score = distance

@@ -1,5 +1,6 @@
 package com.betterbees.ai;
 
+import com.betterbees.hive.HiveSafetyService;
 import com.betterbees.ai.tasks.BeePathfindingTask;
 import com.betterbees.ai.tasks.EnterHiveTask;
 import com.betterbees.ai.tasks.FindFlowerTask;
@@ -39,6 +40,7 @@ import net.minecraft.world.level.block.entity.BeehiveBlockEntity;
 import java.util.function.Predicate;
 
 public final class BeeAi {
+    private static final ImmutableList<Activity> ACTIVITY_PRIORITY = ImmutableList.of(Activity.FIGHT, Activity.CELEBRATE, Activity.IDLE);
     private static final UniformInt TIME_BETWEEN_POLLINATING = UniformInt.of(10, 15);
     private static final UniformInt ADULT_FOLLOW_RANGE = UniformInt.of(3, 16);
 
@@ -129,7 +131,7 @@ public final class BeeAi {
 
     public static void updateActivity(Bee bee) {
         bee.getBrain().setActiveActivityToFirstValid(
-                ImmutableList.of(Activity.FIGHT, Activity.CELEBRATE, Activity.IDLE)
+                ACTIVITY_PRIORITY
         );
     }
 
@@ -139,9 +141,8 @@ public final class BeeAi {
 
     public static boolean isHiveNearFire(ServerLevel level, Bee bee) {
         net.minecraft.core.BlockPos home = ((HiveMemory) bee).betterbees$getMemorizedHome();
-        return home != null
-                && level.getBlockEntity(home) instanceof BeehiveBlockEntity hive
-                && hive.isFireNearby();
+        BeehiveBlockEntity hive = HiveSafetyService.loadedHive(level, home);
+        return hive != null && HiveSafetyService.isFireNearby(level, hive);
     }
 
     public static void incrementMemory(Brain<?> brain, MemoryModuleType<Integer> type) {

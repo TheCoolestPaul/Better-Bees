@@ -25,7 +25,7 @@ case "$platform" in
 esac
 mkdir -p build/smoke
 test_log="build/smoke/gametest-${platform}-${project}-${endpoint}.log"
-./gradlew --no-daemon "${args[@]}" ":$project:build" ":$project:$task" 2>&1 | tee "$test_log"
+./gradlew --no-daemon "${args[@]}" performancePolicyTest ":$project:build" ":$project:$task" 2>&1 | tee "$test_log"
 # Some loader bootstrap failures exit zero. Require actual suite completion,
 # including at least all of our shared tests, before accepting the Gradle result.
 python3 - "$test_log" <<'PY'
