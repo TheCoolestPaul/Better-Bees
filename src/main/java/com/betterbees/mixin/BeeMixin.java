@@ -42,8 +42,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class BeeMixin extends Animal implements HiveMemory, BeePersistentState {
     @Unique
     private static ImmutableList<SensorType<? extends Sensor<? super Bee>>> betterbees$sensors() {
-        return ImmutableList.of(SensorType.NEAREST_LIVING_ENTITIES, SensorType.NEAREST_PLAYERS,
-                SensorType.HURT_BY, SensorType.NEAREST_ADULT,
+        return ImmutableList.of(ModSensorTypes.BEE_NEARBY_ENTITIES.get(), SensorType.NEAREST_PLAYERS,
+                SensorType.HURT_BY, ModSensorTypes.BEE_NEAREST_ADULT.get(),
                 ModSensorTypes.BEE_TEMPTATIONS.get(), ModSensorTypes.BEE_MEMORIES.get());
     }
 

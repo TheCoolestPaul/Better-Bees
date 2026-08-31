@@ -82,6 +82,16 @@ Settings require a restart.
 | `appearance.minimum_bee_scale` | 0.20 | 0.0625-1.0 |
 | `appearance.maximum_bee_scale` | 0.35 | 0.0625-1.0 |
 | `audio.hive_transition_interval_ticks` | 5 | 0-100 |
+| `ai.adaptive_entity_sensing` | true | boolean |
+
+Adaptive entity sensing skips nearby-mob scans for quiet adult bees. Combat, mating,
+damage, and baby-following needs wake sensing before behaviors run; active sensors
+keep vanilla scan intervals, range rules, and visibility checks. Player detection,
+temptation, and hurt sensing are unchanged. Quiet bees clear their nearby-entity
+Brain memories; set `ai.adaptive_entity_sensing = false` and restart the world if
+another mod needs those memories continuously. Sensor state is transient.
+See [entity-sensing validation](docs/entity-sensing-validation.md) for regression
+coverage, compatibility results, and the profiling protocol.
 
 Hive entry and exit share one sound cooldown per loaded hive. The first sound plays
 immediately; duplicates within the interval are discarded. This does not delay bees,

@@ -30,6 +30,14 @@ public final class ModernGameTestRegistrar {
                 ResourceLocation.fromNamespaceAndPath("betterbees", "default"), new TestEnvironmentDefinition.AllOf());
 
         register(event, environment, "beehiveAcceptsConfiguredCapacity", BetterBeesGameTests::beehiveAcceptsConfiguredCapacity);
+        register(event, environment, "quietBeeSensorsAndOptOut", BetterBeesGameTests::quietBeeSensorsAndOptOut);
+        register(event, environment, "sensingWakesBeforeBehaviors", BetterBeesGameTests::sensingWakesBeforeBehaviors);
+        register(event, environment, "activeSensingKeepsPeriodicSchedule", BetterBeesGameTests::activeSensingKeepsPeriodicSchedule);
+        register(event, environment, "babySensingMatchesVanillaVisibility", BetterBeesGameTests::babySensingMatchesVanillaVisibility);
+        register(event, environment, "sensingClearsReferencesAndHiveState", BetterBeesGameTests::sensingClearsReferencesAndHiveState);
+        register(event, environment, "adaptiveSensingPermitsMating", BetterBeesGameTests::adaptiveSensingPermitsMating);
+        register(event, environment, "sensingDimensionAndNonBeeIsolation", BetterBeesGameTests::sensingDimensionAndNonBeeIsolation);
+        register(event, environment, "forcedSensingPreparesVanillaRange", BetterBeesGameTests::forcedSensingPreparesVanillaRange);
         register(event, environment, "sixtyBeesReturnToThreeHives", BetterBeesGameTests::sixtyBeesReturnToThreeHives);
         register(event, environment, "entryRechecksFireAfterSharedSafeResult", BetterBeesGameTests::entryRechecksFireAfterSharedSafeResult);
         register(event, environment, "replacementHiveDoesNotReuseFireCache", BetterBeesGameTests::replacementHiveDoesNotReuseFireCache);
@@ -72,7 +80,7 @@ public final class ModernGameTestRegistrar {
         ResourceLocation name = ResourceLocation.fromNamespaceAndPath("betterbees", path);
         ResourceLocation structure = ResourceLocation.fromNamespaceAndPath("betterbees", "empty");
         TestData<Holder<TestEnvironmentDefinition>> data = new TestData<>(
-                environment, structure, methodName.equals("sixtyBeesReturnToThreeHives") ? 400 : 100, 0, true, Rotation.NONE);
+                environment, structure, methodName.equals("sixtyBeesReturnToThreeHives") || methodName.equals("adaptiveSensingPermitsMating") ? 400 : 100, 0, true, Rotation.NONE);
         event.registerTest(name, new TypedTest(data, body));
     }
 

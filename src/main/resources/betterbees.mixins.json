@@ -6,6 +6,9 @@
   "mixins": [
     "BeeAccessor",
     "BeeMixin",
+    "BrainSensorsAccessor",
+    "BeeSensingBrainMixin",
+    "SensorRangeMixin",
     "BeePersistenceMixin",
     "BeeSpawnMixin",
     "BeehiveBlockMixin",

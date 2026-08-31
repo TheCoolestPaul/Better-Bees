@@ -1,6 +1,16 @@
 package com.betterbees.gametest;
 
 import com.betterbees.util.HiveMemory;
+import com.betterbees.ai.sensors.BeeNearbySensor;
+import com.betterbees.ai.sensors.BeeAdultSensor;
+import com.betterbees.ai.sensors.BeeSensing;
+import com.betterbees.mixin.BrainSensorsAccessor;
+import com.betterbees.registry.ModSensorTypes;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.ai.sensing.NearestLivingEntitySensor;
+import net.minecraft.world.entity.ai.sensing.AdultSensor;
+import java.util.List;
 import com.betterbees.mixin.PathNavigationAccessor;
 import com.betterbees.ai.tasks.BeePathfindingTask;
 import com.betterbees.ai.tasks.EnterHiveTask;
@@ -54,6 +64,273 @@ public final class BetterBeesGameTests {
     private static final BlockPos HIVE_POS = new BlockPos(1, 1, 1);
 
     private BetterBeesGameTests() {}
+
+    @GameTest(template = "empty")
+    public static void quietBeeSensorsAndOptOut(GameTestHelper helper) {
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        BeeNearbySensor nearby = nearbySensor(bee);
+        BeeAdultSensor adult = adultSensor(bee);
+        BeeSensing.beforeBehaviors(helper.getLevel(), bee);
+        for (int tick = 0; tick < 60; tick++) {
+            nearby.tick(helper.getLevel(), bee);
+            adult.tick(helper.getLevel(), bee);
+        }
+        int expected = BetterBeesConfig.adaptiveEntitySensing() ? 0 : 3;
+        VersionHooks.assertValueEqual(helper, nearby.scanCount(), (long) expected, "quiet nearby scans / native opt-out cadence");
+        VersionHooks.assertValueEqual(helper, adult.scanCount(), (long) expected, "adult scans / native opt-out cadence");
+        VersionHooks.assertTrue(helper, bee.getBrain().getMemory(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES).isPresent()
+                != BetterBeesConfig.adaptiveEntitySensing(), "opt-out keeps native visible-entity memory publication");
+        BetterBees.LOGGER.info("Entity sensing regression: adaptive={}, nearbyScans={}, adultScans={}",
+                BetterBeesConfig.adaptiveEntitySensing(), nearby.scanCount(), adult.scanCount());
+        bee.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void sensingWakesBeforeBehaviors(GameTestHelper helper) {
+        if (!BetterBeesConfig.adaptiveEntitySensing()) { helper.succeed(); return; }
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        Bee target = VersionHooks.createBee(helper.getLevel());
+        BeeNearbySensor sensor = nearbySensor(bee);
+        List<Runnable> reasons = List.of(
+                () -> bee.setAge(-24000), () -> bee.setInLove(null),
+                () -> bee.getBrain().setMemory(MemoryModuleType.BREED_TARGET, target),
+                () -> com.betterbees.validation.SensingVersionHooks.setAnger(bee, 200),
+                () -> com.betterbees.validation.SensingVersionHooks.setAngerTarget(bee, target), () -> bee.setTarget(target),
+                () -> bee.getBrain().setMemory(MemoryModuleType.ATTACK_TARGET, target), () -> bee.hurtTime = 10);
+        for (int i = 0; i < reasons.size(); i++) {
+            final int index = i;
+            helper.runAfterDelay(i * 3 + 1, () -> {
+                bee.setAge(0); bee.resetLove(); com.betterbees.validation.SensingVersionHooks.setAnger(bee, 0);
+                bee.setPersistentAngerTarget(null); bee.setTarget(null); bee.hurtTime = 0;
+                bee.getBrain().eraseMemory(MemoryModuleType.BREED_TARGET);
+                bee.getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                BeeSensing.beforeBehaviors(helper.getLevel(), bee);
+                VersionHooks.assertFalse(helper, bee.getBrain().hasMemoryValue(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES),
+                        "quiet transition clears the visible snapshot");
+            });
+            helper.runAfterDelay(i * 3 + 2, () -> {
+                long before = sensor.scanCount();
+                reasons.get(index).run();
+                // Exercise the actual Brain mixin, rather than calling the wake-up helper directly.
+                ((net.minecraft.world.entity.ai.Brain<Bee>) bee.getBrain()).tick(helper.getLevel(), bee);
+                VersionHooks.assertValueEqual(helper, sensor.scanCount(), before + 1, "wake reason " + index);
+                for (int tick = 0; tick < 20; tick++) sensor.tick(helper.getLevel(), bee);
+                BeeSensing.beforeBehaviors(helper.getLevel(), bee);
+                VersionHooks.assertValueEqual(helper, sensor.scanCount(), before + 1, "scheduled/forced scans must not duplicate");
+                if (index == reasons.size() - 1) { bee.discard(); target.discard(); helper.succeed(); }
+            });
+        }
+    }
+
+    @GameTest(template = "empty")
+    public static void activeSensingKeepsPeriodicSchedule(GameTestHelper helper) {
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        com.betterbees.validation.SensingVersionHooks.setAnger(bee, 1000);
+        BeeNearbySensor sensor = nearbySensor(bee);
+        long[] first = new long[1];
+        for (int tick = 1; tick <= 61; tick++) {
+            final int currentTick = tick;
+            helper.runAfterDelay(tick, () -> {
+                sensor.tick(helper.getLevel(), bee);
+                BeeSensing.beforeBehaviors(helper.getLevel(), bee);
+                if (currentTick == 1) first[0] = sensor.scanCount();
+                if (currentTick == 61) {
+                    VersionHooks.assertValueEqual(helper, sensor.scanCount() - first[0], 3L, "three periodic scans per sixty ticks");
+                    bee.discard(); helper.succeed();
+                }
+            });
+        }
+    }
+
+    @GameTest(template = "empty")
+    public static void babySensingMatchesVanillaVisibility(GameTestHelper helper) {
+        Bee baby = sensingBee(helper, 4.5D, 3.0D, 4.5D);
+        Bee blocked = sensingBee(helper, 6.5D, 3.0D, 4.5D);
+        Bee visible = sensingBee(helper, 4.5D, 3.0D, 7.5D);
+        // Outside 1.21.1's fixed radius, inside later versions' configured follow range.
+        Bee distant = sensingBee(helper, 4.5D, 23.0D, 4.5D);
+        baby.setAge(-24000);
+        baby.getAttribute(Attributes.FOLLOW_RANGE).setBaseValue(32.0D);
+        for (int y = 1; y <= 5; y++) for (int z = 2; z <= 6; z++) {
+            helper.setBlock(new BlockPos(5, y, z), Blocks.STONE);
+        }
+        // Force the adult sensor to be the first scheduled sensor on this baby's first tick.
+        if (!BetterBeesConfig.adaptiveEntitySensing()) {
+            for (int tick = 0; tick < 20; tick++) nearbySensor(baby).tick(helper.getLevel(), baby);
+        }
+        for (int tick = 0; tick < 20; tick++) adultSensor(baby).tick(helper.getLevel(), baby);
+        var actual = baby.getBrain().getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES).orElseThrow();
+        var actualVisible = baby.getBrain().getMemory(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES).orElseThrow();
+        var actualAdult = baby.getBrain().getMemory(MemoryModuleType.NEAREST_VISIBLE_ADULT);
+        VersionHooks.assertTrue(helper, actualVisible.contains(visible), "unobstructed bee must be visible");
+        VersionHooks.assertFalse(helper, actualVisible.contains(blocked), "wall must block visibility, including melee visibility");
+        VersionHooks.assertTrue(helper, actualAdult.orElse(null) == visible, "baby follows the closest visible adult");
+        new NativeNearbyProbe().scan(helper.getLevel(), baby);
+        new NativeAdultProbe().scan(helper.getLevel(), baby);
+        VersionHooks.assertTrue(helper, actual.equals(baby.getBrain().getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES).orElseThrow()),
+                "native candidate membership and distance ordering");
+        var nativeVisible = baby.getBrain().getMemory(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES).orElseThrow();
+        for (Bee candidate : List.of(blocked, visible, distant)) {
+            VersionHooks.assertValueEqual(helper, actualVisible.contains(candidate), nativeVisible.contains(candidate),
+                    "native per-bee visibility and version-specific range");
+        }
+        VersionHooks.assertTrue(helper, actualAdult.equals(baby.getBrain().getMemory(MemoryModuleType.NEAREST_VISIBLE_ADULT)),
+                "native adult selection");
+        if (BetterBeesConfig.adaptiveEntitySensing()) {
+            VersionHooks.assertValueEqual(helper, nearbySensor(baby).scanCount(), 1L, "adult-first scheduling wakes nearby sensor once");
+            VersionHooks.assertValueEqual(helper, adultSensor(baby).scanCount(), 1L, "adult-first scheduling does not duplicate adult sensing");
+        }
+        // On the next snapshot, an unobstructed target in melee range can actually be hit.
+        helper.runAfterDelay(3, () -> {
+            VersionHooks.moveTo(blocked, baby.getX(), baby.getY(), baby.getZ() + 0.2D);
+            // These stationary fixture mobs have NoAI; emulate the normal per-tick vanilla LOS-cache reset.
+            baby.getSensing().tick();
+            baby.getBrain().setMemory(MemoryModuleType.ATTACK_TARGET, blocked);
+            for (int tick = 0; tick < 20; tick++) nearbySensor(baby).tick(helper.getLevel(), baby);
+            float health = blocked.getHealth();
+            boolean attacked = net.minecraft.world.entity.ai.behavior.MeleeAttack.create(20).tryStart(helper.getLevel(), baby, helper.getLevel().getGameTime());
+            VersionHooks.assertTrue(helper, blocked.getHealth() < health, "active sensing permits melee: started=" + attacked
+                    + ", visible=" + baby.getBrain().getMemory(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES).orElseThrow().contains(blocked)
+                    + ", inRange=" + baby.isWithinMeleeAttackRange(blocked)
+                    + ", alive=" + blocked.isAlive() + ", lineOfSight=" + baby.hasLineOfSight(blocked)
+                    + ", scans=" + nearbySensor(baby).scanCount());
+            baby.discard(); blocked.discard(); visible.discard(); distant.discard(); helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void adaptiveSensingPermitsMating(GameTestHelper helper) {
+        Bee first = sensingBee(helper, 4.5D, 3.0D, 4.5D);
+        Bee second = sensingBee(helper, 4.8D, 3.0D, 4.5D);
+        for (Bee bee : List.of(first, second)) {
+            bee.getBrain().setMemory(ModMemoryTypes.POLLINATING_COOLDOWN.get(), 400);
+            bee.setNoAi(false);
+            bee.setInLove(null);
+        }
+        var bounds = first.getBoundingBox().inflate(6);
+        helper.succeedWhen(() -> {
+            var babies = helper.getLevel().getEntitiesOfClass(Bee.class, bounds, Bee::isBaby);
+            VersionHooks.assertTrue(helper, !babies.isEmpty(), "visible compatible mates must produce an offspring");
+            first.discard(); second.discard(); babies.forEach(Entity::discard);
+        });
+    }
+
+    @GameTest(template = "empty")
+    public static void sensingClearsReferencesAndHiveState(GameTestHelper helper) {
+        if (!BetterBeesConfig.adaptiveEntitySensing()) { helper.succeed(); return; }
+        Bee bee = sensingBee(helper, 4.5D, 3.0D, 4.5D);
+        Bee neighbor = sensingBee(helper, 6.5D, 3.0D, 4.5D);
+        com.betterbees.validation.SensingVersionHooks.setAnger(bee, 1000);
+        BeeSensing.beforeBehaviors(helper.getLevel(), bee);
+        VersionHooks.assertTrue(helper, bee.getBrain().getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES).orElseThrow().contains(neighbor),
+                "initial snapshot contains neighbor");
+        neighbor.discard();
+        helper.runAfterDelay(1, () -> {
+            for (int i = 0; i < 20; i++) nearbySensor(bee).tick(helper.getLevel(), bee);
+            VersionHooks.assertFalse(helper, bee.getBrain().getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES).orElse(List.of()).contains(neighbor),
+                    "next scan drops removed entities");
+            com.betterbees.validation.SensingVersionHooks.setAnger(bee, 0);
+            BeeSensing.beforeBehaviors(helper.getLevel(), bee);
+            for (var memory : List.of(MemoryModuleType.NEAREST_LIVING_ENTITIES, MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES,
+                    MemoryModuleType.NEAREST_VISIBLE_ADULT)) {
+                VersionHooks.assertFalse(helper, bee.getBrain().hasMemoryValue(memory), "quiet state drops entity references");
+            }
+            BeeNearbySensor oldSensor = nearbySensor(bee);
+            BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
+            hive.addOccupant(bee);
+            Entity restored = ((BeehiveAccessor) hive).betterbees$getBees().get(0).createEntity(helper.getLevel(), hive.getBlockPos());
+            VersionHooks.assertTrue(helper, restored instanceof Bee, "stored bee can be recreated");
+            Bee restoredBee = (Bee) restored;
+            VersionHooks.assertTrue(helper, nearbySensor(restoredBee) != oldSensor, "hive exit gets fresh sensor instances");
+            VersionHooks.assertValueEqual(helper, nearbySensor(restoredBee).scanCount(), 0L, "sensor runtime state is not serialized");
+            restored.discard(); helper.succeed();
+        });
+    }
+
+    private static BeeNearbySensor nearbySensor(Bee bee) {
+        return (BeeNearbySensor) ((BrainSensorsAccessor) bee.getBrain()).betterbees$getSensors().get(ModSensorTypes.BEE_NEARBY_ENTITIES.get());
+    }
+
+    @GameTest(template = "empty")
+    public static void sensingDimensionAndNonBeeIsolation(GameTestHelper helper) {
+        var villager = com.betterbees.validation.SensingVersionHooks.createNonBee(helper.getLevel());
+        var nativeSensor = ((BrainSensorsAccessor) villager.getBrain()).betterbees$getSensors()
+                .get(net.minecraft.world.entity.ai.sensing.SensorType.NEAREST_LIVING_ENTITIES);
+        VersionHooks.assertTrue(helper, nativeSensor != null && !(nativeSensor instanceof BeeNearbySensor),
+                "non-bees retain their native nearby sensor");
+        for (int tick = 0; tick < 20; tick++) {
+            ((net.minecraft.world.entity.ai.sensing.Sensor<net.minecraft.world.entity.LivingEntity>) nativeSensor).tick(helper.getLevel(), villager);
+        }
+        ((net.minecraft.world.entity.ai.Brain<net.minecraft.world.entity.LivingEntity>) villager.getBrain()).tick(helper.getLevel(), villager);
+        VersionHooks.assertTrue(helper, villager.getBrain().hasMemoryValue(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES),
+                "bee hook must not clear non-bee memories");
+        villager.discard();
+        ServerLevel otherLevel = helper.getLevel().getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+        if (otherLevel != null && BetterBeesConfig.adaptiveEntitySensing()) {
+            Bee first = VersionHooks.createBee(helper.getLevel());
+            Bee second = VersionHooks.createBee(otherLevel);
+            com.betterbees.validation.SensingVersionHooks.setAnger(first, 1000);
+            com.betterbees.validation.SensingVersionHooks.setAnger(second, 1000);
+            BeeNearbySensor sensor = nearbySensor(first);
+            sensor.updateDemand(helper.getLevel(), first);
+            sensor.updateDemand(otherLevel, second);
+            sensor.updateDemand(helper.getLevel(), first);
+            VersionHooks.assertValueEqual(helper, sensor.scanCount(), 3L, "dimension changes invalidate the per-tick guard and demand state");
+            first.discard(); second.discard();
+        }
+        helper.succeed();
+    }
+
+    private static BeeAdultSensor adultSensor(Bee bee) {
+        return (BeeAdultSensor) ((BrainSensorsAccessor) bee.getBrain()).betterbees$getSensors().get(ModSensorTypes.BEE_NEAREST_ADULT.get());
+    }
+
+    @GameTest(template = "empty")
+    public static void forcedSensingPreparesVanillaRange(GameTestHelper helper) {
+        Bee baby = sensingBee(helper, 4.5D, 3.0D, 4.5D);
+        Bee adult = sensingBee(helper, 4.5D, 3.0D, 7.5D);
+        Bee previousOwner = VersionHooks.createBee(helper.getLevel());
+        baby.setAge(-24000);
+        baby.getAttribute(Attributes.FOLLOW_RANGE).setBaseValue(32.0D);
+        previousOwner.getAttribute(Attributes.FOLLOW_RANGE).setBaseValue(1.0D);
+        // Newer Sensor.tick prepares shared targeting conditions for its own entity.
+        // A forced refresh must prepare the waking bee's range without ticking its schedule.
+        NativeNearbyProbe probe = new NativeNearbyProbe();
+        for (int i = 0; i < 20; i++) probe.tick(helper.getLevel(), previousOwner);
+        if (BetterBeesConfig.adaptiveEntitySensing()) {
+            BeeSensing.beforeBehaviors(helper.getLevel(), baby);
+        } else {
+            for (int i = 0; i < 20; i++) nearbySensor(baby).tick(helper.getLevel(), baby);
+            for (int i = 0; i < 20; i++) adultSensor(baby).tick(helper.getLevel(), baby);
+        }
+        boolean visible = baby.getBrain().getMemory(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES).orElseThrow().contains(adult);
+        VersionHooks.assertTrue(helper, visible, "forced snapshot must not inherit another entity's short visibility range");
+        VersionHooks.assertTrue(helper, baby.getBrain().getMemory(MemoryModuleType.NEAREST_VISIBLE_ADULT).orElse(null) == adult,
+                "forced adult selection must use the baby's native range");
+        for (int i = 0; i < 20; i++) probe.tick(helper.getLevel(), baby);
+        VersionHooks.assertValueEqual(helper, visible,
+                baby.getBrain().getMemory(MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES).orElseThrow().contains(adult),
+                "forced visibility must agree with a full native scheduled scan");
+        baby.discard(); adult.discard(); previousOwner.discard(); helper.succeed();
+    }
+
+    private static Bee sensingBee(GameTestHelper helper, double x, double y, double z) {
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        BlockPos origin = helper.absolutePos(BlockPos.ZERO);
+        VersionHooks.moveTo(bee, origin.getX() + x, origin.getY() + y, origin.getZ() + z);
+        bee.setNoAi(true);
+        helper.getLevel().addFreshEntity(bee);
+        return bee;
+    }
+
+    private static final class NativeNearbyProbe extends NearestLivingEntitySensor<Bee> {
+        void scan(ServerLevel level, Bee bee) { super.doTick(level, bee); }
+    }
+
+    private static final class NativeAdultProbe extends AdultSensor {
+        void scan(ServerLevel level, Bee bee) { super.doTick(level, bee); }
+    }
 
     @GameTest(template = "empty", timeoutTicks = 400)
     public static void sixtyBeesReturnToThreeHives(GameTestHelper helper) {

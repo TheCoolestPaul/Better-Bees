@@ -23,11 +23,15 @@ public final class BetterBeesConfig {
     private static final ModConfigSpec.DoubleValue MINIMUM_BEE_SCALE;
     private static final ModConfigSpec.DoubleValue MAXIMUM_BEE_SCALE;
     private static final ModConfigSpec.IntValue HIVE_TRANSITION_INTERVAL_TICKS;
+    private static final ModConfigSpec.BooleanValue ADAPTIVE_ENTITY_SENSING;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
         builder.push("ai");
+        ADAPTIVE_ENTITY_SENSING = builder
+                .comment("Skip unused nearby-mob scans for quiet adult bees. Disable for mods that independently consume bee nearby-entity memories.")
+                .worldRestart().define("adaptive_entity_sensing", true);
         MAX_WANDER_RADIUS = builder
                 .comment("Maximum radius in blocks that bees wander from their memorized hive.")
                 .worldRestart()
@@ -117,10 +121,12 @@ public final class BetterBeesConfig {
                 HIVE_CAPACITY.getAsInt(), HONEY_CAPACITY.getAsInt(), HARVEST_COST.getAsInt(),
                 SHEARS_HONEYCOMB_MIN.getAsInt(), SHEARS_HONEYCOMB_MAX.getAsInt(), INDOOR_BREEDING_ENABLED.getAsBoolean(),
                 BREEDING_INTERVAL_TICKS.getAsInt(), BREEDING_CHANCE.getAsDouble(),
-                MINIMUM_BEE_SCALE.getAsDouble(), MAXIMUM_BEE_SCALE.getAsDouble(), HIVE_TRANSITION_INTERVAL_TICKS.getAsInt());
+                MINIMUM_BEE_SCALE.getAsDouble(), MAXIMUM_BEE_SCALE.getAsDouble(), HIVE_TRANSITION_INTERVAL_TICKS.getAsInt(),
+                ADAPTIVE_ENTITY_SENSING.getAsBoolean());
     }
 
     public static ConfigSnapshot snapshot() { return snapshot; }
+    public static boolean adaptiveEntitySensing() { return snapshot.adaptiveEntitySensing(); }
     public static int hiveTransitionIntervalTicks() { return snapshot.hiveTransitionIntervalTicks(); }
     public static int maxWanderRadius() { return snapshot.maxWanderRadius(); }
     public static int flowerLocateRange() { return snapshot.flowerLocateRange(); }

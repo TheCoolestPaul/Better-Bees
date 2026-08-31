@@ -18,11 +18,12 @@ public record ConfigSnapshot(
         double breedingChance,
         double configuredMinimumBeeScale,
         double configuredMaximumBeeScale,
-        int hiveTransitionIntervalTicks
+        int hiveTransitionIntervalTicks,
+        boolean adaptiveEntitySensing
 ) {
     public static ConfigSnapshot defaults() {
         return new ConfigSnapshot(25, 8, 10, 32, 512, 3, 20, 20, 1, 1, 3,
-                true, 1200, 0.05D, 0.20D, 0.35D, 5);
+                true, 1200, 0.05D, 0.20D, 0.35D, 5, true);
     }
 
     public int harvestCost() { return Math.min(configuredHarvestCost, honeyCapacity); }
