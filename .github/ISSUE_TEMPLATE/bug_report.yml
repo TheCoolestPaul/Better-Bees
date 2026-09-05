@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible problem with Better Bees
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reproduce the problem and attach the appropriate diagnostic log below. For NeoForge, attach `logs/debug.log` (preferred over `logs/latest.log`). For Fabric or Quilt, attach `logs/latest.log`. For a dedicated-server problem, attach the corresponding log from the server instance and include the client log when relevant. The log includes the game, loader, Better Bees, dependency, and installed-mod details needed for diagnosis. If the game crashed, also attach the generated file from `crash-reports/`.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and did not find a matching report.
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe what you observed and what you expected to happen instead.
+      placeholder: Tell us what happened and what you expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest reliable sequence that triggers the problem.
+      placeholder: |
+        1. Start Minecraft with ...
+        2. Load or create ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Diagnostic log
+      description: Drag and drop `logs/debug.log` for NeoForge or `logs/latest.log` for Fabric or Quilt here. For a dedicated server, attach the server log and include the client log when relevant. Also attach a crash report if one was created. Do not paste the entire log into this field.
+      placeholder: Drag and drop the appropriate log and any crash report here.
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add screenshots, videos, unusual configuration changes, or anything else that may help.
