@@ -55,7 +55,7 @@ jar are intentionally limited to the lines tested for that target.
   proportional 0-15 fullness signal.
 - Optional Jade integration displays authoritative honey and occupant fractions
   such as `Honey: 14/20` and `Bees: 12/20`.
-- Every bee has a stable UUID-derived physical scale between 20% and 35% by
+- Every bee has a stable UUID-derived physical scale between 20% and 50% by
   default, including matching model, shadow, eye height, and hitbox dimensions.
 
 ## Server configuration
@@ -80,7 +80,7 @@ Settings require a restart.
 | `hive.breeding_interval_ticks` | 1200 | 20-72000 |
 | `hive.breeding_chance` | 0.05 | 0.0-1.0 |
 | `appearance.minimum_bee_scale` | 0.20 | 0.0625-1.0 |
-| `appearance.maximum_bee_scale` | 0.35 | 0.0625-1.0 |
+| `appearance.maximum_bee_scale` | 0.50 | 0.0625-1.0 |
 | `audio.hive_transition_interval_ticks` | 5 | 0-100 |
 | `ai.adaptive_entity_sensing` | true | boolean |
 
@@ -143,6 +143,11 @@ the size through Minecraft's synchronized scale attribute, so clients receive
 the authoritative model and hitbox scale automatically. Babies retain vanilla's
 additional half-size multiplier. Set both appearance values to `1.0` to restore
 vanilla size; inverted bounds are sorted and reported once at startup.
+
+Existing world configurations retain their saved settings. To adopt the wider
+20-50% range, set `maximum_bee_scale = 0.50` under `[appearance]`
+(`appearance.maximum_bee_scale`), keep `minimum_bee_scale = 0.20`, and restart
+the world.
 
 ## Build and test
 

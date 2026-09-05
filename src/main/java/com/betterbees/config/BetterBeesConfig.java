@@ -101,7 +101,7 @@ public final class BetterBeesConfig {
         MAXIMUM_BEE_SCALE = builder
                 .comment("Largest physical scale assigned to an individual bee. Inverted bounds are sorted at runtime.")
                 .worldRestart()
-                .defineInRange("maximum_bee_scale", 0.35D, 0.0625D, 1.0D);
+                .defineInRange("maximum_bee_scale", 0.50D, 0.0625D, 1.0D);
         builder.pop();
 
         builder.push("audio");

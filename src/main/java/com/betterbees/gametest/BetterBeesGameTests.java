@@ -21,6 +21,7 @@ import com.betterbees.hive.HiveRuntimeAccess;
 import com.betterbees.BetterBees;
 import com.betterbees.ai.BeeAi;
 import com.betterbees.config.BetterBeesConfig;
+import com.betterbees.config.ConfigSnapshot;
 import com.betterbees.compat.HiveOverlayData;
 import com.betterbees.hive.HiveBreedingService;
 import com.betterbees.hive.HiveHoneyService;
@@ -602,12 +603,17 @@ public final class BetterBeesGameTests {
 
     @GameTest(template = "empty")
     public static void beeScaleIsStableUniformAndConfigurable(GameTestHelper helper) {
+        ConfigSnapshot defaults = ConfigSnapshot.defaults();
+        double minimum = defaults.minimumBeeScale();
+        double maximum = defaults.maximumBeeScale();
+        VersionHooks.assertTrue(helper, minimum == 0.20D && maximum == 0.50D,
+                "default bee scale range must be 20-50% of vanilla size");
         UUID sample = UUID.fromString("6f3f37a2-928d-41c6-88f6-c88ea50c34be");
-        float first = BeeScaleService.scale(sample, 0.20D, 0.35D);
-        float repeated = BeeScaleService.scale(sample, 0.20D, 0.35D);
+        float first = BeeScaleService.scale(sample, minimum, maximum);
+        float repeated = BeeScaleService.scale(sample, minimum, maximum);
         VersionHooks.assertTrue(helper, Float.compare(first, repeated) == 0, "one UUID must always produce the same scale");
-        VersionHooks.assertTrue(helper, first >= 0.20F && first <= 0.35F, "default scale must remain inside its bounds");
-        VersionHooks.assertTrue(helper, Float.compare(first, BeeScaleService.scale(sample, 0.35D, 0.20D)) == 0,
+        VersionHooks.assertTrue(helper, first >= 0.20F && first <= 0.50F, "default scale must remain inside its bounds");
+        VersionHooks.assertTrue(helper, Float.compare(first, BeeScaleService.scale(sample, maximum, minimum)) == 0,
                 "inverted bounds must normalize to the same scale");
         VersionHooks.assertTrue(helper, Float.compare(1.0F, BeeScaleService.scale(sample, 1.0D, 1.0D)) == 0,
                 "equal vanilla bounds must disable scaling");
@@ -615,9 +621,18 @@ public final class BetterBeesGameTests {
         Set<Float> observed = new HashSet<>();
         for (int i = 0; i < 64; i++) {
             UUID uuid = UUID.nameUUIDFromBytes(("betterbees-scale-" + i).getBytes(StandardCharsets.UTF_8));
-            observed.add(BeeScaleService.scale(uuid, 0.20D, 0.35D));
+            float scale = BeeScaleService.scale(uuid, minimum, maximum);
+            VersionHooks.assertTrue(helper, scale >= 0.20F && scale <= 0.50F,
+                    "every sampled scale must remain inside the default bounds");
+            observed.add(scale);
         }
         VersionHooks.assertTrue(helper, observed.size() > 48, "UUID mapping should produce varied individual scales");
+        VersionHooks.assertTrue(helper, observed.stream().anyMatch(scale -> scale <= 0.23F),
+                "deterministic samples should include bees near the minimum size");
+        VersionHooks.assertTrue(helper, observed.stream().anyMatch(scale -> scale >= 0.47F),
+                "deterministic samples should include bees near the maximum size");
+        VersionHooks.assertTrue(helper, observed.stream().anyMatch(scale -> scale > 0.35F),
+                "the wider default range should produce bees above the former maximum");
         helper.succeed();
     }
 
