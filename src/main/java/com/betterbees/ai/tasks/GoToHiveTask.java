@@ -1,6 +1,6 @@
 package com.betterbees.ai.tasks;
 
-import com.betterbees.ai.NavigationBudget;
+import com.betterbees.ai.HivePathScheduler;
 import com.betterbees.ai.BeeAi;
 import com.betterbees.config.BetterBeesConfig;
 import com.betterbees.registry.ModMemoryTypes;
@@ -17,6 +17,7 @@ import java.util.Map;
 
 public final class GoToHiveTask extends Behavior<Bee> {
     private BlockPos trackedHome;
+    private HivePathScheduler.Request pendingPath;
     private int consecutivePathFailures;
     private long retryAt;
     private double bestDistanceSquared = Double.MAX_VALUE;
@@ -43,6 +44,8 @@ public final class GoToHiveTask extends Behavior<Bee> {
         bee.resetLove();
         BlockPos home = ((HiveMemory) bee).betterbees$getMemorizedHome();
         if (home != null && !home.equals(trackedHome)) {
+            HivePathScheduler.get(level).cancel(bee);
+            pendingPath = null;
             trackedHome = home;
             consecutivePathFailures = 0;
             retryAt = gameTime;
@@ -55,6 +58,28 @@ public final class GoToHiveTask extends Behavior<Bee> {
         HiveMemory memory = (HiveMemory) bee;
         BlockPos home = memory.betterbees$getMemorizedHome();
         if (home == null) return;
+        if (!home.equals(trackedHome)) start(level, bee, gameTime);
+        HivePathScheduler scheduler = HivePathScheduler.get(level);
+        if (pendingPath != null) {
+            if (pendingPath.result() == HivePathScheduler.Result.PENDING) return;
+            if (pendingPath.result() == HivePathScheduler.Result.FAILED) {
+                consecutivePathFailures++;
+                retryAt = pendingPath.completedAt() + 20L;
+                if (consecutivePathFailures >= BetterBeesConfig.hivePathFailuresBeforeBlacklist()) {
+                    memory.betterbees$dropAndBlacklistHive(bee);
+                    pendingPath = null;
+                    return;
+                }
+            } else if (pendingPath.result() == HivePathScheduler.Result.REACHED) {
+                consecutivePathFailures = 0;
+            }
+            pendingPath = null;
+        }
+        if (scheduler.pending(bee)) return;
+        if (bee.getNavigation().isDone() && gameTime >= retryAt) {
+            pendingPath = scheduler.request(bee, home, false);
+            return;
+        }
         double distanceSquared = bee.distanceToSqr(home.getX() + 0.5D, home.getY() + 0.5D, home.getZ() + 0.5D);
         if (distanceSquared + 1.0D < bestDistanceSquared) {
             bestDistanceSquared = distanceSquared;
@@ -66,18 +91,6 @@ public final class GoToHiveTask extends Behavior<Bee> {
         if (travelling > 80 * BetterBeesConfig.maxWanderRadius()) {
             memory.betterbees$dropAndBlacklistHive(bee);
             return;
-        }
-        if (bee.getNavigation().isDone() && gameTime >= retryAt) {
-            if (pathTo(bee, home)) {
-                consecutivePathFailures = 0;
-            } else {
-                consecutivePathFailures++;
-                retryAt = gameTime + 20L;
-                if (consecutivePathFailures >= BetterBeesConfig.hivePathFailuresBeforeBlacklist()) {
-                    memory.betterbees$dropAndBlacklistHive(bee);
-                }
-                return;
-            }
         }
         Path path = bee.getNavigation().getPath();
         Path last = bee.getBrain().getMemory(ModMemoryTypes.LAST_PATH.get()).orElse(null);
@@ -91,10 +104,15 @@ public final class GoToHiveTask extends Behavior<Bee> {
         }
     }
 
-    private static boolean pathTo(Bee bee, BlockPos home) {
-        NavigationBudget.moveTo(bee.getNavigation(), 10.0F,
-                home.getX(), home.getY(), home.getZ(), 1.0);
-        Path path = bee.getNavigation().getPath();
-        return path != null && path.canReach();
+    @Override
+    protected boolean timedOut(long gameTime) {
+        return (pendingPath == null || pendingPath.result() != HivePathScheduler.Result.PENDING)
+                && super.timedOut(gameTime);
+    }
+
+    @Override
+    protected void stop(ServerLevel level, Bee bee, long gameTime) {
+        HivePathScheduler.get(level).cancel(bee);
+        pendingPath = null;
     }
 }

@@ -1,6 +1,7 @@
 package com.betterbees;
 
 import com.betterbees.audio.BeeLoopSelector;
+import com.betterbees.ai.HivePathQueue;
 import com.betterbees.hive.HiveRuntimeState;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -8,11 +9,39 @@ import java.util.concurrent.atomic.AtomicInteger;
 /** Dependency-free regression tests, also runnable before Minecraft artifacts are available. */
 public final class PerformancePolicyTest {
     public static void main(String[] args) {
+        hivePathScheduling();
         sharedFireChecks();
         transitionBursts();
         nearestAndAngerPriority();
         stableSelectionAndRecovery();
-        System.out.println("All 4 performance policy scenarios passed");
+        System.out.println("All 5 performance policy scenarios passed");
+    }
+
+    private static void hivePathScheduling() {
+        HivePathQueue<Integer, Integer> queue = new HivePathQueue<>();
+        var executed = new java.util.ArrayList<Integer>();
+        for (int bee = 0; bee < 200; bee++) queue.add(bee, bee);
+        queue.add(0, 999); // Repeated block updates must not duplicate or replace waiting work.
+        for (long tick = 0; tick < 25; tick++) {
+            require(queue.drain(tick, value -> true, executed::add, value -> {}) == 8, "eight paths per tick");
+            require(queue.drain(tick, value -> true, executed::add, value -> {}) == 0, "same tick cannot double budget");
+        }
+        require(queue.size() == 0 && executed.size() == 200, "200 requests drain in 25 ticks");
+        for (int bee = 0; bee < 200; bee++) require(executed.get(bee) == bee, "FIFO prevents starvation");
+        queue.add(200, 200);
+        queue.add(201, 201);
+        require(queue.remove(200) == 200, "cancel pending request");
+        queue.add(200, 200); // A changed destination joins the back.
+        executed.clear();
+        AtomicInteger discarded = new AtomicInteger();
+        for (int bee = 202; bee < 210; bee++) queue.add(bee, bee);
+        require(queue.drain(25, value -> value != 201, executed::add, value -> discarded.incrementAndGet()) == 8,
+                "stale request does not consume budget");
+        require(discarded.get() == 1 && executed.get(0) == 200 && queue.size() == 1, "cancellation and FIFO");
+        HivePathQueue<Integer, Integer> otherDimension = new HivePathQueue<>();
+        otherDimension.add(1, 1);
+        require(otherDimension.drain(25, value -> true, value -> {}, value -> {}) == 1, "dimension budgets independent");
+        require(queue.drain(0, value -> true, value -> {}, value -> {}) == 1, "clock reset cannot stall queue");
     }
 
     private static void sharedFireChecks() {

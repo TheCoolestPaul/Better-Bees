@@ -60,7 +60,8 @@ tasks.register('compilePerformancePolicyTest', JavaCompile) {
     javaCompiler = project(':mc1_21_1').javaToolchains.compilerFor {
         languageVersion = JavaLanguageVersion.of(21)
     }
-    source files('src/main/java/com/betterbees/hive/HiveRuntimeState.java',
+    source files('src/main/java/com/betterbees/ai/HivePathQueue.java',
+            'src/main/java/com/betterbees/hive/HiveRuntimeState.java',
             'src/main/java/com/betterbees/audio/BeeLoopSelector.java',
             'src/test/java/com/betterbees/PerformancePolicyTest.java')
     classpath = files()
