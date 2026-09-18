@@ -107,6 +107,7 @@ public abstract class BeeMixin extends Animal implements HiveMemory, BeePersiste
         Bee bee = (Bee) (Object) this;
         bee.setNoGravity(true);
         VersionHooks.pushProfiler(level(), "betterBeesBrain");
+        com.betterbees.compat.BeeCompatibility.beforeBrain(bee);
         getBrain().tick((ServerLevel) level(), bee);
         VersionHooks.popProfiler(level());
         BeeAi.updateActivity(bee);

@@ -23,6 +23,7 @@ public final class BetterBees implements ModInitializer {
             logEffectiveConfiguration();
             com.betterbees.validation.UpgradeFixture.runIfRequested(server);
         });
+        com.betterbees.compat.BeeCompatibility.initialize();
         LOGGER.info("Better Bees initialization complete");
     }
 

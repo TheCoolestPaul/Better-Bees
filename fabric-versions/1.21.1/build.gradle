@@ -1,1 +1,3 @@
 apply from: rootProject.file('gradle/fabric-version-module.gradle')
+
+apply from: rootProject.file('gradle/bumblezone-compat.gradle')

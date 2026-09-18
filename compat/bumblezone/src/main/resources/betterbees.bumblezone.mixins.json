@@ -1,0 +1,9 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.betterbees.compat.bumblezone.mixin",
+  "plugin": "com.betterbees.compat.bumblezone.BumblezoneMixinPlugin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": ["BumblezoneReleaseContextMixin", "CompatibilityMixin", "BeeStateMixin", "VariantBeeMixin", "BreedingMixin"],
+  "injectors": {"defaultRequire": 1}
+}

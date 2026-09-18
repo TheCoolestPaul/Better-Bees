@@ -1,0 +1,141 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+
+def enabled = providers.gradleProperty('withBumblezone').map { it.toBoolean() }.getOrElse(false)
+def fabric = project.name.startsWith('fabric')
+def platform = fabric ? 'fabric' : 'neoforge'
+def bz = fabric ? 'eA8SXqWL:7.16.0+1.21.1-fabric' : '38tpSycf:7.16.1+1.21.1-neoforge'
+// Modrinth version IDs distinguish the two Resourceful Lib artifacts with the same version string.
+def resourceful = fabric ? 'Hf91FuVF' : 'x99nCLTm'
+def createEnabled = providers.gradleProperty('withCreate').map { it.toBoolean() }.getOrElse(false)
+def jadeEnabled = providers.gradleProperty('withJade').map { it.toBoolean() }.getOrElse(false)
+def quiltEnabled = providers.gradleProperty('withQuilt').map { it.toBoolean() }.getOrElse(false)
+repositories {
+    maven {
+        url = 'https://nexus.resourcefulbees.com/repository/maven-public/'
+        content { includeGroup 'earth.terrarium.athena' }
+    }
+}
+if (enabled) {
+    def runRoot = "run/compat/${quiltEnabled ? 'quilt' : platform}-1.21.1-bumblezone-jade-${jadeEnabled}-create-${createEnabled}"
+    if (fabric) {
+        loom.runs.configureEach {
+            runDir = rootProject.file(providers.gradleProperty(name == 'gameTest' ? 'upgradeGameDirectory' : 'smokeGameDirectory')
+                    .getOrElse("${runRoot}/${name}"))
+        }
+    } else {
+        neoForge.runs.configureEach {
+            gameDirectory = rootProject.file(providers.gradleProperty(name == 'gameTestServer' ? 'upgradeGameDirectory' : 'smokeGameDirectory')
+                    .getOrElse("${runRoot}/${name}"))
+        }
+    }
+}
+dependencies {
+    if (fabric) compileOnly('io.github.llamalad7:mixinextras-fabric:0.4.1') { transitive = false }
+    else compileOnly('io.github.llamalad7:mixinextras-neoforge:0.4.1') { transitive = false }
+    add(fabric ? 'modCompileOnly' : 'compileOnly', "maven.modrinth:${bz}") { transitive = false }
+    add(fabric ? 'modCompileOnly' : 'compileOnly', "maven.modrinth:G1hIVOrD:${resourceful}") { transitive = false }
+    if (enabled) {
+        add(fabric ? 'modRuntimeOnly' : 'localRuntime', "maven.modrinth:${bz}") { transitive = false }
+        add(fabric ? 'modRuntimeOnly' : 'localRuntime', "maven.modrinth:G1hIVOrD:${resourceful}") { transitive = false }
+        if (fabric) {
+            modRuntimeOnly('maven.modrinth:codAaoxh:1.5.7-fabric') { transitive = false }
+            // Loom's development remapping does not load Bumblezone's nested client model library.
+            modRuntimeOnly('earth.terrarium.athena:athena-fabric-1.21.1:4.0.6') { transitive = false }
+        }
+    }
+}
+tasks.named('compileJava', JavaCompile) {
+    source(rootProject.file('compat/bumblezone/src/main/java'))
+    source(rootProject.file("compat/bumblezone/src/${platform}/java"))
+    if (enabled && !fabric) source(rootProject.file('compat/bumblezone/src/gametest/java'))
+    if (enabled && createEnabled && !fabric) source(rootProject.file('compat/bumblezone/src/createTest/java'))
+}
+tasks.named('processResources', ProcessResources) {
+    from(rootProject.file('compat/bumblezone/src/main/resources'))
+    doLast {
+        def config = new File(destinationDir, 'betterbees.mixins.json')
+        def data = new JsonSlurper().parse(config)
+        data.plugin = 'com.betterbees.compat.bumblezone.BumblezoneMixinPlugin'
+        config.text = JsonOutput.prettyPrint(JsonOutput.toJson(data))
+    }
+}
+if (fabric) {
+    if (enabled) {
+        def inputTest = rootProject.file('compat/bumblezone/src/gametest/java/com/betterbees/compat/bumblezone/BumblezoneGameTests.java')
+        def outputTests = layout.buildDirectory.dir('generated/bumblezoneGameTests')
+        def generateTests = tasks.register('generateBumblezoneGameTests') {
+            inputs.file(inputTest)
+            outputs.dir(outputTests)
+            doLast {
+                def text = inputTest.getText('UTF-8')
+                        .replaceAll('(?m)^import net\\.neoforged\\.neoforge\\.gametest\\.[^;]+;\\R', '')
+                        .replaceAll('(?m)^@GameTestHolder[^\\r\\n]+\\R', '')
+                        .replaceAll('(?m)^@PrefixGameTestTemplate[^\\r\\n]+\\R', '')
+                        .replace('public final class BumblezoneGameTests {', 'public final class BumblezoneGameTests implements net.fabricmc.fabric.api.gametest.v1.FabricGameTest {')
+                        .replace('private BumblezoneGameTests()', 'public BumblezoneGameTests()')
+                        .replace('template = "empty"', 'template = "betterbees:bumblezone_empty"')
+                def output = new File(outputTests.get().asFile, 'com/betterbees/compat/bumblezone/BumblezoneGameTests.java')
+                output.parentFile.mkdirs()
+                output.setText(text, 'UTF-8')
+            }
+        }
+        sourceSets.gametest.java.srcDir(outputTests)
+        tasks.named('compileGametestJava') { dependsOn generateTests }
+        def fixtureResources = layout.buildDirectory.dir('generated/bumblezoneFixtures')
+        def generateFixture = tasks.register('generateBumblezoneFixture') {
+            outputs.dir(fixtureResources)
+            doLast {
+                def fixture = new File(fixtureResources.get().asFile, 'data/betterbees/structure/bumblezone_empty.nbt')
+                fixture.parentFile.mkdirs()
+                fixture.withOutputStream { raw ->
+                    def data = new DataOutputStream(new java.util.zip.GZIPOutputStream(raw))
+                    data.writeByte(10); data.writeUTF('')
+                    data.writeByte(3); data.writeUTF('DataVersion'); data.writeInt(3955)
+                    data.writeByte(9); data.writeUTF('size'); data.writeByte(3); data.writeInt(3)
+                    data.writeInt(32); data.writeInt(8); data.writeInt(32)
+                    data.writeByte(9); data.writeUTF('palette'); data.writeByte(10); data.writeInt(1)
+                    data.writeByte(8); data.writeUTF('Name'); data.writeUTF('minecraft:air'); data.writeByte(0)
+                    data.writeByte(9); data.writeUTF('blocks'); data.writeByte(10); data.writeInt(0)
+                    data.writeByte(9); data.writeUTF('entities'); data.writeByte(10); data.writeInt(0)
+                    data.writeByte(0)
+                    data.close()
+                }
+            }
+        }
+        sourceSets.gametest.resources.srcDir(fixtureResources)
+        tasks.named('processGametestResources') { dependsOn generateFixture }
+        tasks.named('generateFabricGameTestMetadata', ProcessResources) {
+            doLast {
+                def metadata = new File(destinationDir, 'fabric.mod.json')
+                def data = new JsonSlurper().parse(metadata)
+                data.entrypoints['fabric-gametest'].add('com.betterbees.compat.bumblezone.BumblezoneGameTests')
+                metadata.text = JsonOutput.prettyPrint(JsonOutput.toJson(data))
+            }
+        }
+    }
+    tasks.named('generateFabricMetadata', ProcessResources) {
+        doLast {
+            def metadata = new File(destinationDir, 'fabric.mod.json')
+            def data = new JsonSlurper().parse(metadata)
+            data.mixins.add('betterbees.bumblezone.mixins.json')
+            data.suggests.the_bumblezone = '>=7.16.0 <7.17'
+            metadata.text = JsonOutput.prettyPrint(JsonOutput.toJson(data))
+        }
+    }
+} else {
+    tasks.named('generateModMetadata', ProcessResources) {
+        doLast {
+            new File(destinationDir, 'META-INF/neoforge.mods.toml').append('''
+[[mixins]]
+config="betterbees.bumblezone.mixins.json"
+[[dependencies.betterbees]]
+modId="the_bumblezone"
+type="optional"
+versionRange="[7.16.1,7.17)"
+ordering="AFTER"
+side="BOTH"
+''')
+        }
+    }
+}

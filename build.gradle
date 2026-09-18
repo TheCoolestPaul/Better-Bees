@@ -18,6 +18,17 @@ if (providers.gradleProperty('withCreate').map { it.toBoolean() }.getOrElse(fals
     }
 }
 
+if (providers.gradleProperty('withBumblezone').map { it.toBoolean() }.getOrElse(false)) {
+    def requested = gradle.startParameter.taskNames
+    if (requested.isEmpty() || requested.any { !(it.startsWith(':mc1_21_1:') || it.startsWith(':fabricMc1_21_1:')) }) {
+        throw new GradleException('withBumblezone supports explicit 1.21.1 project tasks only.')
+    }
+    if (providers.gradleProperty('withQuilt').map { it.toBoolean() }.getOrElse(false)
+            && requested.any { it.startsWith(':mc1_21_1:') }) {
+        throw new GradleException('withQuilt requires :fabricMc1_21_1: tasks with Bumblezone.')
+    }
+}
+
 tasks.register('buildAll') {
     group = 'build'
     description = 'Builds every supported Minecraft artifact.'

@@ -61,6 +61,7 @@ public final class BeeAi {
         brain.setCoreActivities(ImmutableSet.of(Activity.CORE));
         brain.setDefaultActivity(Activity.IDLE);
         brain.useDefaultActivity();
+        com.betterbees.compat.BeeCompatibility.configureBrain(brain);
         return brain;
     }
 
@@ -130,6 +131,7 @@ public final class BeeAi {
     }
 
     public static void updateActivity(Bee bee) {
+        if (com.betterbees.compat.BeeCompatibility.selectActivity(bee)) return;
         bee.getBrain().setActiveActivityToFirstValid(
                 ACTIVITY_PRIORITY
         );
