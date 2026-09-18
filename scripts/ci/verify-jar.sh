@@ -66,6 +66,18 @@ if [[ "$platform" == neoforge && "$minecraft_version" == 1.21.1 ]]; then
 elif grep -Eq '^com/betterbees/compat/create/|^betterbees.create.mixins.json$' <<<"$entries"; then
   echo 'Create adapters must only be packaged for NeoForge 1.21.1' >&2; exit 1
 fi
+if grep -Eq '^com/telepathicgrunt/|^com/teamresourceful/' <<<"$entries"; then
+  echo 'Release jar must not bundle Bumblezone or Resourceful Lib' >&2; exit 1
+fi
+if grep -Eq '^com/betterbees/compat/(bumblezone|create)/.*GameTests' <<<"$entries"; then
+  echo 'Release jar must not contain optional integration tests' >&2; exit 1
+fi
+if [[ "$minecraft_version" == 1.21.1 ]]; then
+  grep -Fxq betterbees.bumblezone.mixins.json <<<"$entries" || { echo 'Bumblezone mixin config missing' >&2; exit 1; }
+  grep -Fxq com/betterbees/compat/bumblezone/BumblezoneMixinPlugin.class <<<"$entries" || { echo 'Bumblezone loading guard missing' >&2; exit 1; }
+elif grep -Eq '^com/betterbees/compat/bumblezone/|^betterbees.bumblezone.mixins.json$' <<<"$entries"; then
+  echo 'Bumblezone adapters must only be packaged for 1.21.1' >&2; exit 1
+fi
 class_major="$(unzip -p "$jar_path" com/betterbees/BetterBees.class | od -An -t u1 -N 8 | awk '{print $7 * 256 + $8}')"
 expected_major=$((java_version + 44))
 [[ "$class_major" == "$expected_major" ]] || { echo "Expected Java $java_version class major $expected_major, got $class_major" >&2; exit 1; }

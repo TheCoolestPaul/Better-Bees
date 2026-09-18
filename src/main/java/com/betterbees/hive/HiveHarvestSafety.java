@@ -10,6 +10,7 @@ public final class HiveHarvestSafety {
     private HiveHarvestSafety() {}
 
     public static boolean isSafe(Level level, BlockPos pos, Player player) {
-        return CampfireBlock.isSmokeyPos(level, pos);
+        return CampfireBlock.isSmokeyPos(level, pos)
+                || com.betterbees.compat.BeeCompatibility.protectedPlayer(player);
     }
 }

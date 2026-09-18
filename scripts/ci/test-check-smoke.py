@@ -41,6 +41,11 @@ class SmokeTests(unittest.TestCase):
     def test_quilt_server_with_real_mods_passes(self):
         self.assertEqual(checker.classify(SERVER, "server", "quilt")[0], 0)
 
+    def test_bumblezone_requires_activation(self):
+        self.assertEqual(checker.classify(SERVER, 'server', 'neoforge', bumblezone=True)[0], 1)
+        self.assertEqual(checker.classify(SERVER + '\nBetter Bees Bumblezone integration enabled',
+                                         'server', 'neoforge', bumblezone=True)[0], 0)
+
     def test_jade_requires_completed_registration(self):
         text = CLIENT + '\nLoading plugin com.betterbees.compat.jade.BetterBeesJadePlugin'
         self.assertEqual(checker.classify(text, "client", "fabric", True)[0], 1)

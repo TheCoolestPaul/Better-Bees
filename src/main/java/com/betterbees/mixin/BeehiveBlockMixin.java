@@ -59,6 +59,7 @@ public abstract class BeehiveBlockMixin {
         if (shears) {
             level.playSound(player, player.getX(), player.getY(), player.getZ(), SoundEvents.BEEHIVE_SHEAR, SoundSource.BLOCKS, 1.0F, 1.0F);
             BeehiveBlock.popResource(level, pos, HiveHoneyService.randomHoneycomb(level.random));
+            com.betterbees.compat.BeeCompatibility.shear(stack, player, level, pos);
             stack.hurtAndBreak(1, player, LivingEntity.getSlotForHand(hand));
             level.gameEvent(player, GameEvent.SHEAR, pos);
         } else {
@@ -82,7 +83,8 @@ public abstract class BeehiveBlockMixin {
     @Unique
     private static void betterbees$angerNearbyBees(Level level, BlockPos pos) {
         AABB area = new AABB(pos).inflate(8.0, 6.0, 8.0);
-        List<Player> players = level.getEntitiesOfClass(Player.class, area);
+        List<Player> players = level.getEntitiesOfClass(Player.class, area,
+                player -> !com.betterbees.compat.BeeCompatibility.protectedPlayer(player));
         if (players.isEmpty()) return;
         for (Bee bee : level.getEntitiesOfClass(Bee.class, area)) {
             if (bee.getTarget() == null) bee.setTarget(players.get(level.random.nextInt(players.size())));

@@ -14,11 +14,13 @@ FATAL = re.compile(
     r'NoClassDefFoundError|NoSuchMethodError|BUILD FAILED', re.I)
 
 
-def classify(text, mode, platform, jade=False, create=False):
+def classify(text, mode, platform, jade=False, create=False, bumblezone=False):
     failure = FATAL.search(text)
     if failure:
         return 2, f"Fatal launch error: {failure.group()}"
     markers = [("Better Bees initialization", r"Better Bees initialization complete")]
+    if bumblezone:
+        markers.append(("Bumblezone integration enabled", r"Better Bees Bumblezone integration enabled"))
     if create:
         markers.append(("Create integration enabled", r"Better Bees Create integration enabled"))
     if platform != "neoforge":
@@ -45,7 +47,8 @@ if __name__ == "__main__":
     parser.add_argument("platform", choices=("neoforge", "fabric", "quilt"))
     parser.add_argument("--jade", action="store_true")
     parser.add_argument("--create", action="store_true")
+    parser.add_argument("--bumblezone", action="store_true")
     args = parser.parse_args()
-    status, message = classify(args.log.read_text(errors="replace"), args.mode, args.platform, args.jade, args.create)
+    status, message = classify(args.log.read_text(errors="replace"), args.mode, args.platform, args.jade, args.create, args.bumblezone)
     print(message)
     raise SystemExit(status)
