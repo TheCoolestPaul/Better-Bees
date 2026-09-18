@@ -15,19 +15,22 @@ def endpoint_values(target, floor_key, latest_key):
     return list(dict.fromkeys(values))
 
 
-def matrix(kind):
+def matrix(kind, profile="routine"):
+    if profile not in ("routine", "full"):
+        raise ValueError(f"Unknown validation profile: {profile}")
     rows = []
     for minecraft, target in TARGETS.items():
         common = {"minecraft": minecraft, "java": str(target["java"])}
         if kind == "validation":
-            for platform in ("neoforge", "fabric", "quilt"):
+            platforms = ("neoforge", "fabric") if profile == "routine" else ("neoforge", "fabric", "quilt")
+            for platform in platforms:
                 if platform == "quilt" and not target.get("quiltSupported", True):
                     continue
                 neo = platform == "neoforge"
                 loader_key = {"neoforge": "neo", "fabric": "fabricLoader", "quilt": "quiltLoader"}[platform]
-                for endpoint in ("Floor", "Latest"):
+                for endpoint in (("Floor",) if profile == "routine" else ("Floor", "Latest")):
                     rows.append({
-                        **common, "platform": platform, "endpoint": endpoint.lower(),
+                        **common, "platform": platform, "endpoint": endpoint.lower(), "profile": profile,
                         "project": target["project" if neo else "fabricProject"],
                         "loader": target[loader_key + endpoint],
                         "api": "" if neo else target["fabricApi" + endpoint],
@@ -87,5 +90,6 @@ def matrix(kind):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("kind", choices=("validation", "neo", "neo-jade", "fabric", "quilt", "fabric-jade", "package"))
+    parser.add_argument("--profile", choices=("routine", "full"), default="routine")
     args = parser.parse_args()
-    print(json.dumps({"include": matrix(args.kind)}, separators=(",", ":")))
+    print(json.dumps({"include": matrix(args.kind, args.profile)}, separators=(",", ":")))

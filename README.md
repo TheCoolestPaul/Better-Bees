@@ -186,22 +186,41 @@ compiled against its platform floor so newer-only calls fail during development.
 
 ### Continuous integration and releases
 
-Pull requests, pushes to `main`, and releases share one validation workflow.
-It runs 32 endpoint jobs: minimum and latest dependency stacks for six NeoForge,
-six Fabric, and four supported Quilt targets. Each builds, runs the gameplay
-GameTests, and starts a client without Jade. Jade-enabled runtime testing is
-opt-in locally and does not run in CI. Three sequential world-upgrade
-jobs protect saved bee, honey, and hive-item data using normal dedicated
+Pull requests, pushes to `main`, and releases share one validation workflow
+with two profiles. Manual runs from **Actions > CI > Run workflow** default to
+`routine`; select `full` for release-level coverage.
+
+| Profile | When | Jobs |
+|---|---|---|
+| Routine | PRs, `main` pushes, default manual run | **13**: 12 minimum-stack NeoForge/Fabric artifact builds and GameTest suites, plus tooling |
+| Documentation only | PRs and pushes changing only `README.md` or Markdown files under `docs/` | **1**: tooling |
+| Full | Every release; selectable manual run | **36**: 32 endpoint jobs, three world-upgrade chains, plus tooling |
+
+Counts exclude separate release packaging and publishing jobs. Tooling runs the
+Python and shell checks and the shared performance-policy test once. Routine
+endpoints do not prepare client assets, install graphics packages, or start clients.
+Full validation covers minimum and latest dependency stacks for six NeoForge,
+six Fabric, and four supported Quilt targets, with 32 client startup checks.
+Quilt runs GameTests and client startup without a separate artifact build;
+runtime tasks still compile Minecraft code as needed.
+
+Documentation classification compares the PR base commit with its checked-out
+merge revision, or the push's previous and new commits. Mixed changes, missing
+history, and empty or unusable diffs run runtime validation. Manual runs and
+releases always run the requested profile. Documentation changes still trigger
+CI and report completed checks.
+
+The three full-profile sequential world-upgrade jobs protect saved bee, honey,
+and hive-item data using normal dedicated
 servers that save and reopen the same world (GameTest runners can reset worlds).
 Missing upgrade fixtures after the first version hop fail instead of being
 recreated. Upgrade runs require a fresh directory and refuse to downgrade an
 existing world. Normal smoke launches also use isolated CI run directories.
 
-That is 35 runtime validation jobs and 32 ordinary smoke launches, plus one
-small tooling/matrix job. The two intermediate NeoForge 1.21.1 checkpoints and
-separate overlapping build/Jade jobs are no longer mandatory. Jade remains
-optional; CI compiles the integration and validates release dependency metadata
-without launching Jade. On NeoForge Minecraft 1.21.4, Jade 17.3.0 is the minimum supported
+Create and Jade runtime compatibility testing remains opt-in locally; neither
+automated profile enables them. CI still compiles the integrations and validates
+release dependency metadata. Existing local client-startup and world-upgrade
+commands remain available. On NeoForge Minecraft 1.21.4, Jade 17.3.0 is the minimum supported
 version because 17.0.1 fails during client initialization.
 
 Smoke checks require actual Better Bees initialization, Fabric API on
@@ -218,8 +237,8 @@ read from the repository before the form is submitted. The first job and the
 run summary report the current project version, last published release,
 calculated release version, and `v<version>` tag before expensive validation.
 
-The workflow applies the calculated version to the balanced validation matrix,
-then verifies all twelve floor-built jars and checksums. Only after
+The workflow applies the calculated version to full validation, then separately
+rebuilds and verifies all twelve floor-built jars and checksums. Only after
 all checks pass does it update `mod_version` (when needed), commit, tag, and
 publish the GitHub Release. Prerelease suffixes automatically create GitHub
 prereleases. A changed `main`, invalid/backward version, failed test, or jar

@@ -65,6 +65,7 @@ jobs:
     with:
       ref: ${{ needs.resolve.outputs.sha }}
       version: ${{ needs.resolve.outputs.version }}
+      profile: full
 
   package:
     needs: [resolve, validation]
