@@ -13,9 +13,13 @@ public interface HiveMemory {
 
     void betterbees$setMemorizedHome(BlockPos pos);
 
+    static void resetLocateHiveCooldown(Bee bee) {
+        bee.getBrain().setMemory(ModMemoryTypes.COOLDOWN_LOCATE_HIVE.get(), 150 + bee.getRandom().nextInt(101));
+    }
+
     default void betterbees$dropHive(Bee bee) {
         betterbees$removeMemorizedHive(bee);
-        bee.getBrain().setMemory(ModMemoryTypes.COOLDOWN_LOCATE_HIVE.get(), 200);
+        resetLocateHiveCooldown(bee);
     }
 
     default void betterbees$dropAndBlacklistHive(Bee bee) {
