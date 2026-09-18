@@ -91,3 +91,26 @@ Still outstanding: the full latest/floor endpoint matrix with Jade, every client
 server smoke lane, in-world audio lifecycle/listening checks, and the before/after
 20/60/120-bee profiles above. No FPS, tick-time, allocation, packet-count, or audio-channel
 improvement has been measured; remaining performance bottlenecks are not yet established.
+
+
+## Hive path scheduling
+
+Hive return paths, retries, and hive-directed block-update recalculations share a
+FIFO queue owned by each server level. At most eight valid requests execute at the
+end of a level tick. Repeated requests from one bee retain their existing queue
+position; changed destinations cancel the old request. Invalid requests consume no
+pathfinding slot, and queued recalculations preserve the current path until execution.
+The existing search budget and movement speed are retained.
+
+The policy test verifies that 200 valid requests drain in 25 ticks, along with
+fairness, deduplication, cancellation, stale-request handling, and independent
+level budgets. GameTests cover actual level-tick draining, invalidated return
+intent, unchanged wait timers, blocked-route retries, and deferred recalculation.
+The existing 60-bee return fixture remains part of the suite.
+
+These checks establish request-count bounds and behavioral correctness. They do
+not measure tick-time improvement. Profile rain onset with 20, 60, 120, and 200
+bees, including obstructed forest routes, to measure maximum tick time and the
+additional time until hive entry. A 200-request burst takes 25 scheduler ticks
+(1.25 seconds at 20 TPS) to process when no other requests share the queue; this
+is scheduling time, not a guarantee that all bees enter their hives in that time.

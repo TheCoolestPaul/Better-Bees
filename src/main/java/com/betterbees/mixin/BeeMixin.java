@@ -78,6 +78,7 @@ public abstract class BeeMixin extends Animal implements HiveMemory, BeePersiste
     @Override public void betterbees$setMemorizedHome(BlockPos pos) {
         if (betterbees$memorizedHome != null && !betterbees$memorizedHome.equals(pos)
                 && level() instanceof ServerLevel serverLevel) {
+            com.betterbees.ai.HivePathScheduler.get(serverLevel).cancel((Bee) (Object) this);
             HiveFlowerService.release(serverLevel, betterbees$memorizedHome, (Bee) (Object) this);
         }
         betterbees$memorizedHome = pos;

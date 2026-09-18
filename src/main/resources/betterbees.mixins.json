@@ -20,6 +20,7 @@
     "BeehiveReleaseContextMixin",
     "PathNavigationAccessor",
     "HiveNavigationMixin",
+    "ServerLevelHivePathMixin",
     "BeehiveOccupantMixin",
     "DispenserBlockAccessor",
     "DispenserBottleMixin",

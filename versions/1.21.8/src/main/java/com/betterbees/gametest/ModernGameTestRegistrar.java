@@ -50,6 +50,10 @@ public final class ModernGameTestRegistrar {
         register(event, environment, "sixtyBeesReturnToThreeHives", BetterBeesGameTests::sixtyBeesReturnToThreeHives);
         register(event, environment, "entryRechecksFireAfterSharedSafeResult", BetterBeesGameTests::entryRechecksFireAfterSharedSafeResult);
         register(event, environment, "replacementHiveDoesNotReuseFireCache", BetterBeesGameTests::replacementHiveDoesNotReuseFireCache);
+        register(event, environment, "blockedHivePathsRetryAfterExecution", BetterBeesGameTests::blockedHivePathsRetryAfterExecution);
+        register(event, environment, "hivePathsUseLevelTickQueue", BetterBeesGameTests::hivePathsUseLevelTickQueue);
+        register(event, environment, "queuedHivePathsRevalidateBeforeExecution", BetterBeesGameTests::queuedHivePathsRevalidateBeforeExecution);
+        register(event, environment, "queuedHivePathWaitDoesNotAdvanceTimers", BetterBeesGameTests::queuedHivePathWaitDoesNotAdvanceTimers);
         register(event, environment, "pathRequestsRestoreBudgetAndReturnBlocksWandering", BetterBeesGameTests::pathRequestsRestoreBudgetAndReturnBlocksWandering);
         register(event, environment, "soundThrottlePreservesEntryAndEmergencyRelease", BetterBeesGameTests::soundThrottlePreservesEntryAndEmergencyRelease);
         register(event, environment, "beeNestUsesSameCapacity", BetterBeesGameTests::beeNestUsesSameCapacity);
@@ -89,7 +93,7 @@ public final class ModernGameTestRegistrar {
         ResourceLocation name = ResourceLocation.fromNamespaceAndPath("betterbees", path);
         ResourceLocation structure = ResourceLocation.fromNamespaceAndPath("betterbees", "empty");
         TestData<Holder<TestEnvironmentDefinition>> data = new TestData<>(
-                environment, structure, methodName.equals("sixtyBeesReturnToThreeHives") || methodName.equals("adaptiveSensingPermitsMating") ? 400 : 100, 0, true, Rotation.NONE);
+                environment, structure, methodName.equals("sixtyBeesReturnToThreeHives") || methodName.equals("blockedHivePathsRetryAfterExecution") || methodName.equals("adaptiveSensingPermitsMating") ? 400 : 100, 0, true, Rotation.NONE);
         event.registerTest(name, new TypedTest(data, body));
     }
 
