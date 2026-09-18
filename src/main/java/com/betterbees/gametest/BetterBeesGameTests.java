@@ -15,6 +15,8 @@ import com.betterbees.mixin.PathNavigationAccessor;
 import com.betterbees.ai.tasks.BeePathfindingTask;
 import com.betterbees.ai.tasks.EnterHiveTask;
 import com.betterbees.ai.NavigationBudget;
+import com.betterbees.ai.HivePathScheduler;
+import com.betterbees.ai.tasks.GoToHiveTask;
 import com.betterbees.hive.HiveSafetyService;
 import com.betterbees.hive.HiveRuntimeState;
 import com.betterbees.hive.HiveRuntimeAccess;
@@ -410,6 +412,131 @@ public final class BetterBeesGameTests {
         helper.succeed();
     }
 
+    private static Bee queuedPathBee(GameTestHelper helper, BlockPos home) {
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, bee != null, "bee should be constructible");
+        VersionHooks.moveTo(bee, home.getX() + 2.5D, home.getY() + 1.0D, home.getZ() + 0.5D);
+        bee.setNoAi(true);
+        ((HiveMemory) bee).betterbees$setMemorizedHome(home);
+        bee.getBrain().setMemory(ModMemoryTypes.WANTS_HIVE.get(), true);
+        bee.getBrain().setActiveActivityIfPossible(net.minecraft.world.entity.schedule.Activity.IDLE);
+        helper.getLevel().addFreshEntity(bee);
+        return bee;
+    }
+
+    @GameTest(template = "empty")
+    public static void hivePathsUseLevelTickQueue(GameTestHelper helper) {
+        BlockPos home = placeHive(helper, Blocks.BEEHIVE).getBlockPos();
+        HivePathScheduler scheduler = HivePathScheduler.get(helper.getLevel());
+        var bees = new java.util.ArrayList<Bee>();
+        var requests = new java.util.ArrayList<HivePathScheduler.Request>();
+        for (int i = 0; i < 24; i++) {
+            Bee bee = queuedPathBee(helper, home);
+            bees.add(bee);
+            requests.add(scheduler.request(bee, home, false));
+            VersionHooks.assertTrue(helper, bee.getNavigation().getPath() == null, "enqueue must not pathfind inline");
+            VersionHooks.assertTrue(helper, scheduler.request(bee, home, true) == requests.get(i), "one pending request per bee");
+        }
+        helper.succeedWhen(() -> {
+            int completed = (int) requests.stream().filter(r -> r.result() != HivePathScheduler.Result.PENDING).count();
+            VersionHooks.assertTrue(helper, completed == 24, "all queued bees must receive a turn");
+            var counts = new java.util.HashMap<Long, Integer>();
+            for (var request : requests) {
+                VersionHooks.assertTrue(helper, request.result() == HivePathScheduler.Result.REACHED, "open hive route should be reachable");
+                counts.merge(request.completedAt(), 1, Integer::sum);
+            }
+            VersionHooks.assertTrue(helper, counts.values().stream().allMatch(count -> count <= 8), "at most eight requests per level tick");
+            bees.forEach(Bee::discard);
+        });
+    }
+
+    @GameTest(template = "empty")
+    public static void queuedHivePathsRevalidateBeforeExecution(GameTestHelper helper) {
+        BlockPos home = placeHive(helper, Blocks.BEEHIVE).getBlockPos();
+        HivePathScheduler scheduler = HivePathScheduler.get(helper.getLevel());
+        Bee changedHome = queuedPathBee(helper, home);
+        Bee changedIntent = queuedPathBee(helper, home);
+        Bee removed = queuedPathBee(helper, home);
+        Bee cooldown = queuedPathBee(helper, home);
+        var requests = java.util.List.of(scheduler.request(changedHome, home, false),
+                scheduler.request(changedIntent, home, false), scheduler.request(removed, home, false),
+                scheduler.request(cooldown, home, false));
+        ((HiveMemory) changedHome).betterbees$setMemorizedHome(home.above());
+        changedIntent.getBrain().eraseMemory(ModMemoryTypes.WANTS_HIVE.get());
+        removed.discard();
+        cooldown.getBrain().setMemory(ModMemoryTypes.COOLDOWN_LOCATE_HIVE.get(), 200);
+        helper.succeedWhen(() -> {
+            for (var request : requests) VersionHooks.assertTrue(helper,
+                    request.result() == HivePathScheduler.Result.CANCELLED, "stale request must be cancelled");
+            for (Bee bee : java.util.List.of(changedHome, changedIntent, cooldown)) {
+                VersionHooks.assertTrue(helper, bee.getNavigation().getPath() == null, "stale request must not navigate");
+                bee.discard();
+            }
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void blockedHivePathsRetryAfterExecution(GameTestHelper helper) {
+        BlockPos home = placeHive(helper, Blocks.BEEHIVE).getBlockPos();
+        Bee bee = queuedPathBee(helper, home);
+        BlockPos cage = home.above(4);
+        for (BlockPos pos : BlockPos.betweenClosed(cage.offset(-1, -1, -1), cage.offset(1, 1, 1))) {
+            if (!pos.equals(cage)) helper.getLevel().setBlockAndUpdate(pos, Blocks.STONE.defaultBlockState());
+        }
+        VersionHooks.moveTo(bee, cage.getX() + 0.5D, cage.getY(), cage.getZ() + 0.5D);
+        var task = new GoToHiveTask();
+        var scheduler = HivePathScheduler.get(helper.getLevel());
+        long now = helper.getLevel().getGameTime();
+        VersionHooks.assertTrue(helper, task.tryStart(helper.getLevel(), bee, now), "blocked return starts");
+        task.tickOrStop(helper.getLevel(), bee, now);
+        var first = scheduler.request(bee, home, false);
+        helper.succeedWhen(() -> {
+            long tick = helper.getLevel().getGameTime();
+            // This fixture disables autonomous behavior; advance navigation and restart
+            // expired behaviors just as the entity and Brain ticks normally would.
+            bee.getNavigation().tick();
+            if (task.getStatus() == net.minecraft.world.entity.ai.behavior.Behavior.Status.STOPPED) {
+                task.tryStart(helper.getLevel(), bee, tick);
+            }
+            task.tickOrStop(helper.getLevel(), bee, tick);
+            VersionHooks.assertTrue(helper, first.result() == HivePathScheduler.Result.FAILED, "enclosed bee must fail its executed path");
+            if (tick < first.completedAt() + 20L) {
+                VersionHooks.assertFalse(helper, scheduler.pending(bee), "failed path waits twenty ticks before retry");
+            }
+            VersionHooks.assertTrue(helper, ((HiveMemory) bee).betterbees$getMemorizedHome() == null, "repeated executed failures eventually abandon blocked hive");
+            VersionHooks.assertTrue(helper, bee.getBrain().getMemory(ModMemoryTypes.HIVE_BLACKLIST.get()).orElse(java.util.List.of())
+                    .contains(net.minecraft.core.GlobalPos.of(helper.getLevel().dimension(), home)), "blocked hive must be blacklisted");
+            task.doStop(helper.getLevel(), bee, tick);
+            bee.discard();
+        });
+    }
+
+    @GameTest(template = "empty")
+    public static void queuedHivePathWaitDoesNotAdvanceTimers(GameTestHelper helper) {
+        BlockPos home = placeHive(helper, Blocks.BEEHIVE).getBlockPos();
+        Bee bee = queuedPathBee(helper, home);
+        var task = new GoToHiveTask();
+        long now = helper.getLevel().getGameTime();
+        VersionHooks.assertTrue(helper, task.tryStart(helper.getLevel(), bee, now), "return task starts");
+        task.tickOrStop(helper.getLevel(), bee, now);
+        bee.getBrain().setMemory(ModMemoryTypes.TRAVELLING_TICKS.get(), 40);
+        bee.getBrain().setMemory(ModMemoryTypes.STUCK_TICKS.get(), 30);
+        // Even past the behavior's normal timeout, pending work must retain its queue position.
+        for (int tick = 1; tick <= 100; tick++) task.tickOrStop(helper.getLevel(), bee, now + tick);
+        VersionHooks.assertTrue(helper, HivePathScheduler.get(helper.getLevel()).pending(bee), "waiting survives behavior timeout");
+        VersionHooks.assertValueEqual(helper, bee.getBrain().getMemory(ModMemoryTypes.TRAVELLING_TICKS.get()).orElse(0), 40, "queue wait is not travel time");
+        VersionHooks.assertValueEqual(helper, bee.getBrain().getMemory(ModMemoryTypes.STUCK_TICKS.get()).orElse(0), 30, "queue wait is not stuck time");
+        HivePathScheduler.get(helper.getLevel()).cancel(bee);
+        task.tickOrStop(helper.getLevel(), bee, now + 101);
+        VersionHooks.assertTrue(helper, task.getStatus() == net.minecraft.world.entity.ai.behavior.Behavior.Status.RUNNING,
+                "completed queue result is consumed before behavior timeout");
+        VersionHooks.assertTrue(helper, HivePathScheduler.get(helper.getLevel()).pending(bee), "cancelled result can request a replacement");
+        task.doStop(helper.getLevel(), bee, now + 102);
+        VersionHooks.assertFalse(helper, HivePathScheduler.get(helper.getLevel()).pending(bee), "stopping cancels pending work");
+        bee.discard();
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void pathRequestsRestoreBudgetAndReturnBlocksWandering(GameTestHelper helper) {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
@@ -431,17 +558,25 @@ public final class BetterBeesGameTests {
             VersionHooks.assertFalse(helper, new BeePathfindingTask()
                     .tryStart(helper.getLevel(), bee, helper.getLevel().getGameTime()), "idle wander must not compete with return home");
         }
+        bee.setNoAi(true);
+        bee.getBrain().setActiveActivityIfPossible(net.minecraft.world.entity.schedule.Activity.IDLE);
+        helper.getLevel().addFreshEntity(bee);
         // Vanilla rate-limits recomputation for the first 20 world ticks.
         helper.runAfterDelay(21, () -> {
             NavigationBudget.moveTo(bee.getNavigation(), 10.0F, home.getX(), home.getY(), home.getZ(), 1.0D);
+            var previousPath = bee.getNavigation().getPath();
             bee.getNavigation().recomputePath();
-            VersionHooks.assertValueEqual(helper,
-                    ((PathNavigationAccessor) bee.getNavigation()).betterbees$getMaxVisitedNodesMultiplier(),
-                    0.75F, "block-update recalculation restores the previous navigation budget");
-            VersionHooks.assertTrue(helper, bee.getNavigation().getPath() != null
-                    && bee.getNavigation().getPath().canReach(), "recalculation still reaches the home");
-            bee.discard();
-            helper.succeed();
+            VersionHooks.assertTrue(helper, HivePathScheduler.get(helper.getLevel()).pending(bee), "block-update recalculation must queue");
+            VersionHooks.assertTrue(helper, bee.getNavigation().getPath() == previousPath, "queued recalculation preserves active path");
+            helper.succeedWhen(() -> {
+                VersionHooks.assertFalse(helper, HivePathScheduler.get(helper.getLevel()).pending(bee), "queued recalculation must execute");
+                VersionHooks.assertValueEqual(helper,
+                        ((PathNavigationAccessor) bee.getNavigation()).betterbees$getMaxVisitedNodesMultiplier(),
+                        0.75F, "block-update recalculation restores the previous navigation budget");
+                VersionHooks.assertTrue(helper, bee.getNavigation().getPath() != null
+                        && bee.getNavigation().getPath().canReach(), "recalculation still reaches the home");
+                bee.discard();
+            });
         });
     }
 

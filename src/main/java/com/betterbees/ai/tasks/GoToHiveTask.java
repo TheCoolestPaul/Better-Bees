@@ -106,8 +106,9 @@ public final class GoToHiveTask extends Behavior<Bee> {
 
     @Override
     protected boolean timedOut(long gameTime) {
-        return (pendingPath == null || pendingPath.result() != HivePathScheduler.Result.PENDING)
-                && super.timedOut(gameTime);
+        // Consume a completed result before honoring the behavior timeout: a long
+        // queue wait must not erase a failure or skip its retry cooldown.
+        return pendingPath == null && super.timedOut(gameTime);
     }
 
     @Override
