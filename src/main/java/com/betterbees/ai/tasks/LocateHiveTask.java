@@ -36,7 +36,7 @@ public final class LocateHiveTask extends Behavior<Bee> {
 
     @Override
     protected void start(ServerLevel level, Bee bee, long gameTime) {
-        bee.getBrain().setMemory(ModMemoryTypes.COOLDOWN_LOCATE_HIVE.get(), 200);
+        HiveMemory.resetLocateHiveCooldown(bee);
         List<GlobalPos> blacklist = bee.getBrain().getMemory(ModMemoryTypes.HIVE_BLACKLIST.get()).orElseGet(List::of);
         BlockPos beePos = bee.blockPosition();
         Candidate best = null;
