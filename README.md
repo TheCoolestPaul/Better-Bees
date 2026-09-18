@@ -49,7 +49,7 @@ jar are intentionally limited to the lines tested for that target.
 - Existing over-capacity hives are retained when capacity is lowered.
 - Authoritative 0-64 honey storage that survives saves and silk-touch items.
 - Bottles and shears consume one honey by default; shears drop a uniformly
-  random 1-3 honeycomb. Dispenser shears use the same rules.
+  random 1-3 honeycomb. Dispenser bottles and shears use the same rules.
 - Vanilla campfire safety and unsmoked bee anger/release behavior are retained.
 - The vanilla 0-5 state is a proportional display proxy; comparators emit a
   proportional 0-15 fullness signal.
@@ -186,26 +186,45 @@ compiled against its platform floor so newer-only calls fail during development.
 
 ### Continuous integration and releases
 
-Pull requests, pushes to `main`, and releases share one validation workflow.
-It runs 32 endpoint jobs: minimum and latest dependency stacks for six NeoForge,
-six Fabric, and four supported Quilt targets. Each builds, runs the gameplay
-GameTests, and starts a client without Jade. Latest-stack jobs also start a
-normal dedicated server and client with Jade. Three sequential world-upgrade
-jobs protect saved bee, honey, and hive-item data using normal dedicated
+Pull requests, pushes to `main`, and releases share one validation workflow
+with two profiles. Manual runs from **Actions > CI > Run workflow** default to
+`routine`; select `full` for release-level coverage.
+
+| Profile | When | Jobs |
+|---|---|---|
+| Routine | PRs, `main` pushes, default manual run | **13**: 12 minimum-stack NeoForge/Fabric artifact builds and GameTest suites, plus tooling |
+| Documentation only | PRs and pushes changing only `README.md` or Markdown files under `docs/` | **1**: tooling |
+| Full | Every release; selectable manual run | **36**: 32 endpoint jobs, three world-upgrade chains, plus tooling |
+
+Counts exclude separate release packaging and publishing jobs. Tooling runs the
+Python and shell checks and the shared performance-policy test once. Routine
+endpoints do not prepare client assets, install graphics packages, or start clients.
+Full validation covers minimum and latest dependency stacks for six NeoForge,
+six Fabric, and four supported Quilt targets, with 32 client startup checks.
+Quilt runs GameTests and client startup without a separate artifact build;
+runtime tasks still compile Minecraft code as needed.
+
+Documentation classification compares the PR base commit with its checked-out
+merge revision, or the push's previous and new commits. Mixed changes, missing
+history, and empty or unusable diffs run runtime validation. Manual runs and
+releases always run the requested profile. Documentation changes still trigger
+CI and report completed checks.
+
+The three full-profile sequential world-upgrade jobs protect saved bee, honey,
+and hive-item data using normal dedicated
 servers that save and reopen the same world (GameTest runners can reset worlds).
 Missing upgrade fixtures after the first version hop fail instead of being
 recreated. Upgrade runs require a fresh directory and refuse to downgrade an
 existing world. Normal smoke launches also use isolated CI run directories.
 
-That is 35 runtime validation jobs and 64 ordinary smoke launches, plus one
-small tooling/matrix job. The two intermediate NeoForge 1.21.1 checkpoints and
-separate overlapping build/Jade jobs are no longer mandatory. Jade remains
-optional; the release gate tests its latest version, not every advertised Jade
-minimum. On NeoForge Minecraft 1.21.4, Jade 17.3.0 is the minimum supported
+Create and Jade runtime compatibility testing remains opt-in locally; neither
+automated profile enables them. CI still compiles the integrations and validates
+release dependency metadata. Existing local client-startup and world-upgrade
+commands remain available. On NeoForge Minecraft 1.21.4, Jade 17.3.0 is the minimum supported
 version because 17.0.1 fails during client initialization.
 
 Smoke checks require actual Better Bees initialization, Fabric API on
-Fabric/Quilt, and completed Jade provider registration when enabled. Asset
+Fabric/Quilt. Local Jade-enabled smoke checks also require completed Jade provider registration. Asset
 preparation runs before the startup deadline and may retry one asset-task
 failure; mod failures are never retried. Failed jobs retain startup logs,
 crash reports, and available test reports for seven days. Ordinary CI retains
@@ -218,8 +237,8 @@ read from the repository before the form is submitted. The first job and the
 run summary report the current project version, last published release,
 calculated release version, and `v<version>` tag before expensive validation.
 
-The workflow applies the calculated version to the balanced validation matrix,
-then verifies all twelve floor-built jars and checksums. Only after
+The workflow applies the calculated version to full validation, then separately
+rebuilds and verifies all twelve floor-built jars and checksums. Only after
 all checks pass does it update `mod_version` (when needed), commit, tag, and
 publish the GitHub Release. Prerelease suffixes automatically create GitHub
 prereleases. A changed `main`, invalid/backward version, failed test, or jar
@@ -256,6 +275,32 @@ the exact tested commit; the workflow never moves a tag. The old nonrelease tag
 `v0.1.0-NEO-1.21.1` is retained but does not participate in version selection.
 
 ## Compatibility
+
+Create 6.0.10 is supported on **NeoForge 1.21.1**. Create remains optional and is
+never bundled. Deployers, including contraption-mounted deployers harvesting
+placed hives, use the configured bottle/shears harvest rules without disturbing
+bees. Direct pipe extraction produces **250 mB of Create honey per configured
+harvest cost**, matching one honey bottle, even when the hive is not full.
+Pipe simulation and rejected fluid requests consume no honey; partial batches
+remain in Create's pipe buffer. Existing item drains and spouts need no new recipes.
+
+Contraption assembly, movement, save/reload, and disassembly preserve exact honey
+and all stored bees, including hives above current capacity. Released bees remember
+the hive's new location. Hives do not gain active production while assembled into
+moving contraptions. Fluid insertion into hives is not supported.
+
+The dispenser fix applies to every supported loader and Minecraft target. The
+Create adapters are packaged only in the NeoForge 1.21.1 jar; other Create versions
+and Fabric ports are not validated. Run the optional development profile with:
+
+```powershell
+.\gradlew.bat :mc1_21_1:runGameTestServer -PwithCreate=true
+.\gradlew.bat :mc1_21_1:runClient -PwithCreate=true
+```
+
+This profile selects the target's latest NeoForge runtime and pins Create 6.0.10,
+Ponder 1.0.82, Flywheel 1.0.6, and Registrate MC1.21-1.3.0+67. Normal release builds
+still compile against the NeoForge floor. See [automation compatibility validation](docs/automation-compatibility.md).
 
 Jade is optional and is compiled separately against the compatible Jade line
 for each loader and Minecraft target. Install Jade on both the client and server to see exact stored honey

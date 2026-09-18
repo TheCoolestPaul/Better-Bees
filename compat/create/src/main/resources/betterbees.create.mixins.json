@@ -1,0 +1,9 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.betterbees.compat.create.mixin",
+  "plugin": "com.betterbees.compat.create.CreateMixinPlugin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": ["DeployerHarvestSafetyMixin", "VanillaFluidTargetsMixin", "OpenEndedPipeAccessor", "OpenEndFluidHandlerMixin"],
+  "injectors": { "defaultRequire": 1 }
+}

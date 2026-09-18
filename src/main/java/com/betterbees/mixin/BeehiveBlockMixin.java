@@ -1,6 +1,7 @@
 package com.betterbees.mixin;
 
 import com.betterbees.hive.HiveHoneyService;
+import com.betterbees.hive.HiveHarvestSafety;
 import com.betterbees.platform.VersionHooks;
 import com.betterbees.platform.LoaderHooks;
 import net.minecraft.core.BlockPos;
@@ -16,7 +17,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BeehiveBlock;
-import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.entity.BeehiveBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
@@ -72,7 +72,7 @@ public abstract class BeehiveBlockMixin {
 
         HiveHoneyService.consume(hive);
         player.awardStat(Stats.ITEM_USED.get(item));
-        if (!CampfireBlock.isSmokeyPos(level, pos)) {
+        if (!HiveHarvestSafety.isSafe(level, pos, player)) {
             if (!hive.isEmpty()) betterbees$angerNearbyBees(level, pos);
             hive.emptyAllLivingFromHive(player, level.getBlockState(pos), BeehiveBlockEntity.BeeReleaseStatus.EMERGENCY);
         }

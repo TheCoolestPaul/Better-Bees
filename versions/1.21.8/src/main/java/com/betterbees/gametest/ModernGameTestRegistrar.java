@@ -30,6 +30,15 @@ public final class ModernGameTestRegistrar {
                 ResourceLocation.fromNamespaceAndPath("betterbees", "default"), new TestEnvironmentDefinition.AllOf());
 
         register(event, environment, "beehiveAcceptsConfiguredCapacity", BetterBeesGameTests::beehiveAcceptsConfiguredCapacity);
+        register(event, environment, "dispenserBottlesUseAuthoritativeHoney", helper -> {
+            try {
+                BetterBeesGameTests.dispenserBottlesUseAuthoritativeHoney(helper);
+            } catch (Exception exception) {
+                throw new RuntimeException("Bottle dispenser regression failed", exception);
+            }
+        });
+        register(event, environment, "dispenserBottleInventoryAndFallbacks", BetterBeesGameTests::dispenserBottleInventoryAndFallbacks);
+        register(event, environment, "storedBeeRemembersItsReleaseHive", BetterBeesGameTests::storedBeeRemembersItsReleaseHive);
         register(event, environment, "quietBeeSensorsAndOptOut", BetterBeesGameTests::quietBeeSensorsAndOptOut);
         register(event, environment, "sensingWakesBeforeBehaviors", BetterBeesGameTests::sensingWakesBeforeBehaviors);
         register(event, environment, "activeSensingKeepsPeriodicSchedule", BetterBeesGameTests::activeSensingKeepsPeriodicSchedule);

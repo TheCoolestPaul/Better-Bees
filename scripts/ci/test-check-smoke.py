@@ -23,6 +23,11 @@ Done (5.130s)! For help, type "help"
 
 
 class SmokeTests(unittest.TestCase):
+    def test_create_profile_requires_integration(self):
+        self.assertEqual(checker.classify(SERVER, "server", "neoforge", create=True)[0], 1)
+        self.assertEqual(checker.classify(SERVER + '\nBetter Bees Create integration enabled',
+                                         "server", "neoforge", create=True)[0], 0)
+
     def test_healthy_fabric_does_not_need_neoforge_resource_name(self):
         self.assertEqual(checker.classify(CLIENT, "client", "fabric")[0], 0)
 

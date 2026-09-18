@@ -1,1 +1,2 @@
 apply from: rootProject.file('gradle/version-module.gradle')
+apply from: rootProject.file('gradle/create-compat.gradle')

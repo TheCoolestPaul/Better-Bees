@@ -8,29 +8,61 @@ on:
       version:
         default: ''
         type: string
+      profile:
+        default: routine
+        type: string
+      base_ref:
+        default: ''
+        type: string
 permissions: { contents: read }
 
 jobs:
   tooling:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     outputs:
       targets: ${{ steps.matrix.outputs.targets }}
+      runtime: ${{ steps.scope.outputs.runtime }}
     steps:
       - uses: actions/checkout@v7
-        with: { ref: '${{ inputs.ref }}' }
+        with: { ref: '${{ inputs.ref }}', fetch-depth: 0 }
+      - id: matrix
+        env: { PROFILE: '${{ inputs.profile }}' }
+        run: |
+          targets=$(python3 scripts/ci/target-matrix.py validation --profile "$PROFILE")
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ inputs.base_ref }}
+          REF: ${{ inputs.ref }}
+          PROFILE: ${{ inputs.profile }}
+          VERSION: ${{ inputs.version }}
+        run: python3 scripts/ci/validation-scope.py --event "$EVENT" --base "$BASE" --ref "$REF" --profile "$PROFILE" --version "$VERSION" --github-output "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v5
+        with:
+          java-version: |
+            21
+            25
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v6
       - run: |
           python3 scripts/ci/test-resolve-version.py
           python3 scripts/ci/test-validate-modrinth-release.py
           python3 scripts/ci/test-target-matrix.py
+          python3 scripts/ci/test-validation-scope.py
+          python3 scripts/ci/test-validate-target.py
           python3 scripts/ci/test-check-smoke.py
           python3 scripts/ci/test-smoke-launch.py
-          bash -n scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh scripts/ci/world-upgrade.sh scripts/ci/validate-target.sh
-      - id: matrix
-        run: echo "targets=$(python3 scripts/ci/target-matrix.py validation)" >> "$GITHUB_OUTPUT"
+          for script in scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh scripts/ci/world-upgrade.sh scripts/ci/validate-target.sh; do
+            bash -n "$script"
+          done
+      - name: Shared performance policy
+        run: ./gradlew --no-daemon performancePolicyTest
 
   endpoint:
     needs: tooling
+    if: needs.tooling.outputs.runtime == 'true'
     name: ${{ matrix.platform }} ${{ matrix.minecraft }} ${{ matrix.endpoint }} (${{ matrix.loader }})
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -46,7 +78,8 @@ jobs:
       - uses: actions/setup-java@v5
         with: { java-version: '${{ matrix.java }}', distribution: temurin }
       - uses: gradle/actions/setup-gradle@v6
-      - run: sudo apt-get update && sudo apt-get install --yes xvfb libgl1-mesa-dri
+      - if: inputs.profile == 'full'
+        run: sudo apt-get update && sudo apt-get install --yes xvfb libgl1-mesa-dri
       - name: Build, GameTests, and launch coverage
         env: { TARGET: '${{ toJSON(matrix) }}' }
         run: bash scripts/ci/validate-target.sh
@@ -68,6 +101,7 @@ jobs:
 
   world_upgrade:
     needs: tooling
+    if: inputs.profile == 'full' && needs.tooling.outputs.runtime == 'true'
     name: Sequential ${{ matrix.platform }} world upgrade
     runs-on: ubuntu-latest
     timeout-minutes: 45

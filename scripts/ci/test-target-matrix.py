@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 spec = importlib.util.spec_from_file_location("target_matrix", Path(__file__).with_name("target-matrix.py"))
@@ -10,25 +12,68 @@ spec.loader.exec_module(matrix)
 
 class MatrixTests(unittest.TestCase):
     def test_balanced_coverage_and_launch_budget(self):
-        rows = matrix.matrix("validation")
+        rows = matrix.matrix("validation", "full")
         self.assertEqual(len(rows), 32)
         keys = {(r['platform'], r['minecraft'], r['endpoint']) for r in rows}
         self.assertEqual(len(keys), len(rows))
-        self.assertEqual(sum(3 if r['endpoint'] == 'latest' else 1 for r in rows), 64)
+        runner = (matrix.ROOT / 'scripts/ci/validate-target.sh').read_text()
+        self.assertEqual(runner.count('bash scripts/ci/smoke-launch.sh'), 1)
+        self.assertNotIn('-PwithJade', runner)
+        self.assertNotIn('-PwithCreate', runner)
+        self.assertNotIn('performancePolicyTest', runner)
         for mc, target in matrix.TARGETS.items():
             for platform in ('neoforge', 'fabric', 'quilt'):
                 supported = platform != 'quilt' or target.get('quiltSupported', True)
                 for endpoint in ('floor', 'latest'):
                     self.assertEqual((platform, mc, endpoint) in keys, supported)
 
-    def test_versions_come_from_manifest_and_jade_only_uses_latest(self):
-        for row in matrix.matrix('validation'):
+    def test_versions_come_from_manifest_without_jade_runtime(self):
+        for row in matrix.matrix('validation', 'full'):
             target = matrix.TARGETS[row['minecraft']]
             prefix = {'neoforge': 'neo', 'fabric': 'fabricLoader', 'quilt': 'quiltLoader'}[row['platform']]
             self.assertEqual(row['loader'], target[prefix + row['endpoint'].title()])
             neo = row['platform'] == 'neoforge'
-            self.assertEqual(row['jade'], target['jadeLatest' if neo else 'fabricJadeLatest'])
+            self.assertNotIn('jade', row)
             self.assertEqual(row['api'], '' if neo else target['fabricApi' + row['endpoint'].title()])
+
+    def test_routine_is_twelve_minimum_artifact_targets(self):
+        rows = matrix.matrix('validation')
+        self.assertEqual(len(rows), 12)
+        self.assertEqual({(r['platform'], r['minecraft']) for r in rows},
+                         {(p, mc) for p in ('neoforge', 'fabric') for mc in matrix.TARGETS})
+        for row in rows:
+            self.assertEqual(row['profile'], 'routine')
+            self.assertEqual(row['endpoint'], 'floor')
+            target = matrix.TARGETS[row['minecraft']]
+            neo = row['platform'] == 'neoforge'
+            self.assertEqual(row['loader'], target['neoFloor' if neo else 'fabricLoaderFloor'])
+            self.assertEqual(row['api'], '' if neo else target['fabricApiFloor'])
+
+    def test_invalid_profile(self):
+        with self.assertRaises(ValueError):
+            matrix.matrix('validation', 'unknown')
+        result = subprocess.run([sys.executable, str(Path(matrix.__file__)), 'validation',
+                                 '--profile', 'unknown'], capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_workflow_routing(self):
+        workflow = (matrix.ROOT / '.github/workflows/validate.yml').read_text()
+        self.assertEqual(workflow.count('performancePolicyTest'), 1)
+        self.assertIn("if: inputs.profile == 'full' && needs.tooling.outputs.runtime == 'true'", workflow)
+        self.assertIn('platform: [neoforge, fabric, quilt]', workflow)
+        self.assertIn("if: inputs.profile == 'full'\n", workflow)
+        release = (matrix.ROOT / '.github/workflows/release.yml').read_text()
+        self.assertIn('profile: full', release)
+        self.assertIn('needs: [resolve, validation]', release)
+        ci = (matrix.ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.profile || 'routine'", ci)
+        self.assertIn('github.event.pull_request.base.sha || github.event.before', ci)
+        self.assertIn('cancel-in-progress: true', ci)
+        self.assertNotIn('paths-ignore:', ci)
+        self.assertNotIn('paths:', ci)
+        for text in (workflow, ci, release):
+            self.assertNotIn('withJade', text)
+            self.assertNotIn('withCreate', text)
 
     def test_package_targets_and_jade_support_remain_correct(self):
         rows = matrix.matrix('package')

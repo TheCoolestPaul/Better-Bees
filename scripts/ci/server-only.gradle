@@ -1,0 +1,10 @@
+// ModDevGradle prepares asset metadata even for dedicated GameTest servers.
+// Those runs have no asset arguments. Replace only their metadata input so
+// routine CI does not pull in downloadAssets; client/full runs keep the default.
+gradle.projectsEvaluated {
+    rootProject.allprojects { project ->
+        project.tasks.matching { it.name == 'prepareGameTestServerRun' }.configureEach {
+            assetProperties.set(rootProject.layout.projectDirectory.file('scripts/ci/server-assets.properties'))
+        }
+    }
+}

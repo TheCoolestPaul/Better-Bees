@@ -3,15 +3,24 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 # Read values as array elements, never evaluate JSON as shell code.
-mapfile -t target < <(python3 - <<'PY'
-import json, os
+target_values="$(python3 - <<'PY'
+import json, os, sys
+sys.stdout.reconfigure(newline='\n')
 t = json.loads(os.environ['TARGET'])
-for key in ('platform', 'project', 'loader', 'api', 'jade', 'endpoint'):
+profile = t.get('profile', 'routine')
+if profile not in ('routine', 'full'):
+    raise SystemExit(f'Unknown validation profile: {profile}')
+if profile == 'routine' and (t['platform'] == 'quilt' or t['endpoint'] != 'floor'):
+    raise SystemExit('Routine validation requires NeoForge/Fabric floor targets')
+for key in ('platform', 'project', 'loader', 'api', 'endpoint'):
     print(t[key])
+print(profile)
 PY
-)
+)"
+mapfile -t target <<< "$target_values"
 platform="${target[0]}"; project="${target[1]}"; loader="${target[2]}"
-api="${target[3]}"; jade="${target[4]}"; endpoint="${target[5]}"
+api="${target[3]}"; endpoint="${target[4]}"
+profile="${target[5]}"
 case "$platform" in
   neoforge) args=("-Pneo_version=$loader"); task=runGameTestServer; smoke_args=() ;;
   fabric|quilt)
@@ -23,9 +32,15 @@ case "$platform" in
     ;;
   *) echo "Unknown platform: $platform" >&2; exit 2 ;;
 esac
+if [[ "$profile" == routine && "$platform" == neoforge ]]; then
+  args+=(--init-script scripts/ci/server-only.gradle)
+fi
 mkdir -p build/smoke
 test_log="build/smoke/gametest-${platform}-${project}-${endpoint}.log"
-./gradlew --no-daemon "${args[@]}" performancePolicyTest ":$project:build" ":$project:$task" 2>&1 | tee "$test_log"
+tasks=()
+if [[ "$platform" != quilt ]]; then tasks+=(":$project:build"); fi
+tasks+=(":$project:$task")
+./gradlew --no-daemon "${args[@]}" "${tasks[@]}" 2>&1 | tee "$test_log"
 # Some loader bootstrap failures exit zero. Require actual suite completion,
 # including at least all of our shared tests, before accepting the Gradle result.
 python3 - "$test_log" <<'PY'
@@ -37,9 +52,6 @@ passed = [int(n) for n in re.findall(r'All (\d+) required tests passed', log)]
 if not expected or max(passed, default=0) < expected:
     sys.exit(f'Expected at least {expected} passing GameTests; no complete suite was reported')
 PY
-bash scripts/ci/smoke-launch.sh client "$platform" "$project" "$loader" "${smoke_args[@]}"
-if [[ "$endpoint" == latest ]]; then
-  for mode in server client; do
-    bash scripts/ci/smoke-launch.sh "$mode" "$platform" "$project" "$loader" "${smoke_args[@]}" -PwithJade=true "-Pjade_version=$jade"
-  done
+if [[ "$profile" == full ]]; then
+  bash scripts/ci/smoke-launch.sh client "$platform" "$project" "$loader" "${smoke_args[@]}"
 fi

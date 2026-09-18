@@ -37,7 +37,8 @@ repositories {
     }
 }
 
-def effectiveNeoVersion = providers.gradleProperty('neo_version').getOrElse(target.neoFloor as String)
+def createProfile = providers.gradleProperty('withCreate').map { it.toBoolean() }.getOrElse(false)
+def effectiveNeoVersion = providers.gradleProperty('neo_version').getOrElse(createProfile && target.minecraft == '1.21.1' ? target.neoLatest as String : target.neoFloor as String)
 def effectiveJadeVersion = providers.gradleProperty('jade_version').getOrElse(target.jadeFloor as String)
 def sharedJavaDirectory = rootProject.file('src/main/java')
 def sharedResourcesDirectory = rootProject.file('src/main/resources')
