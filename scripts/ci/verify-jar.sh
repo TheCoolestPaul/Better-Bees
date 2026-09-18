@@ -56,6 +56,16 @@ else
 fi
 
 if grep -Eq '^snownee/jade/' <<<"$entries"; then echo 'Release jar must not bundle Jade classes' >&2; exit 1; fi
+if grep -Eq '^com/simibubi/create/|^net/createmod/|^dev/engine_room/flywheel/' <<<"$entries"; then
+  echo 'Release jar must not bundle Create or its dependencies' >&2; exit 1
+fi
+if [[ "$platform" == neoforge && "$minecraft_version" == 1.21.1 ]]; then
+  grep -Fxq betterbees.create.mixins.json <<<"$entries" || { echo 'Create mixin config is missing' >&2; exit 1; }
+  grep -Fxq com/betterbees/compat/create/CreateMixinPlugin.class <<<"$entries" || { echo 'Create loading guard is missing' >&2; exit 1; }
+  grep -Fq 'config="betterbees.create.mixins.json"' <<<"$metadata" || { echo 'Create mixin metadata is missing' >&2; exit 1; }
+elif grep -Eq '^com/betterbees/compat/create/|^betterbees.create.mixins.json$' <<<"$entries"; then
+  echo 'Create adapters must only be packaged for NeoForge 1.21.1' >&2; exit 1
+fi
 class_major="$(unzip -p "$jar_path" com/betterbees/BetterBees.class | od -An -t u1 -N 8 | awk '{print $7 * 256 + $8}')"
 expected_major=$((java_version + 44))
 [[ "$class_major" == "$expected_major" ]] || { echo "Expected Java $java_version class major $expected_major, got $class_major" >&2; exit 1; }

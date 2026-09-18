@@ -832,6 +832,103 @@ public final class BetterBeesGameTests {
     }
 
     @GameTest(template = "empty")
+    public static void dispenserBottlesUseAuthoritativeHoney(GameTestHelper helper) throws Exception {
+        // Synchronous scoped override: other GameTests cannot observe this configuration.
+        var field = BetterBeesConfig.class.getDeclaredField("snapshot");
+        field.setAccessible(true);
+        var saved = BetterBeesConfig.snapshot();
+        try {
+            for (int cost : new int[]{1, 5}) {
+                var d = com.betterbees.config.ConfigSnapshot.defaults();
+                field.set(null, new com.betterbees.config.ConfigSnapshot(d.maxWanderRadius(), d.flowerLocateRange(),
+                        d.searchAttempts(), d.flowerScanBudget(), d.flowerCacheSize(), d.hivePathFailuresBeforeBlacklist(),
+                        10, cost == 5 ? 5 : 20, cost, 1, 3, false, d.breedingIntervalTicks(), d.breedingChance(),
+                        d.minimumBeeScale(), d.maximumBeeScale(), d.hiveTransitionIntervalTicks(), d.adaptiveEntitySensing()));
+                for (Block block : new Block[]{Blocks.BEEHIVE, Blocks.BEE_NEST}) {
+                    BeehiveBlockEntity hive = placeHive(helper, block);
+                    BlockPos dispenserPos = HIVE_POS.south();
+                    helper.setBlock(dispenserPos, Blocks.DISPENSER.defaultBlockState().setValue(DispenserBlock.FACING, Direction.NORTH));
+                    DispenserBlockEntity dispenser = VersionHooks.getBlockEntity(helper, dispenserPos, DispenserBlockEntity.class);
+                    BlockPos absolute = helper.absolutePos(dispenserPos);
+                    for (int honey : new int[]{0, cost - 1, cost, BetterBeesConfig.honeyCapacity()}) {
+                        dispenser.clearContent();
+                        dispenser.setItem(0, new ItemStack(Items.GLASS_BOTTLE));
+                        HiveHoneyService.set(hive, honey);
+                        ((DispenserBlockAccessor) Blocks.DISPENSER).betterbees$dispenseFrom(
+                                helper.getLevel(), helper.getLevel().getBlockState(absolute), absolute);
+                        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), Math.max(honey < cost ? honey : honey - cost, 0), "exact dispenser harvest cost");
+                        if (honey >= cost) VersionHooks.assertTrue(helper, dispenser.getItem(0).is(Items.HONEY_BOTTLE), "filled bottle replaces last empty bottle");
+                    }
+                    // A display-only full hive must never manufacture honey.
+                    HiveHoneyService.set(hive, 0);
+                    helper.getLevel().setBlockAndUpdate(hive.getBlockPos(), hive.getBlockState().setValue(net.minecraft.world.level.block.BeehiveBlock.HONEY_LEVEL, 5));
+                    dispenser.clearContent();
+                    dispenser.setItem(0, new ItemStack(Items.GLASS_BOTTLE));
+                    ((DispenserBlockAccessor) Blocks.DISPENSER).betterbees$dispenseFrom(helper.getLevel(), helper.getLevel().getBlockState(absolute), absolute);
+                    VersionHooks.assertFalse(helper, dispenser.getItem(0).is(Items.HONEY_BOTTLE), "stale full display cannot be harvested");
+                }
+            }
+        } finally {
+            field.set(null, saved);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void dispenserBottleInventoryAndFallbacks(GameTestHelper helper) {
+        BeehiveBlockEntity hive = placeHive(helper, Blocks.BEE_NEST);
+        BlockPos pos = HIVE_POS.south();
+        BlockPos absolute = helper.absolutePos(pos);
+        helper.setBlock(pos, Blocks.DISPENSER.defaultBlockState().setValue(DispenserBlock.FACING, Direction.NORTH));
+        DispenserBlockEntity dispenser = VersionHooks.getBlockEntity(helper, pos, DispenserBlockEntity.class);
+        HiveHoneyService.set(hive, 20);
+        dispenser.setItem(0, new ItemStack(Items.GLASS_BOTTLE, 3));
+        ((DispenserBlockAccessor) Blocks.DISPENSER).betterbees$dispenseFrom(helper.getLevel(), helper.getLevel().getBlockState(absolute), absolute);
+        VersionHooks.assertValueEqual(helper, dispenser.getItem(0).getCount(), 2, "one bottle consumed from stack");
+        VersionHooks.assertTrue(helper, dispenser.getItem(1).is(Items.HONEY_BOTTLE), "result inserted into inventory");
+        // Every selectable slot holds bottles, so random dispenser slot selection is deterministic in effect.
+        for (int slot = 0; slot < dispenser.getContainerSize(); slot++) dispenser.setItem(slot, new ItemStack(Items.GLASS_BOTTLE, 2));
+        var area = new net.minecraft.world.phys.AABB(absolute).inflate(2);
+        int before = helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, area,
+                entity -> entity.getItem().is(Items.HONEY_BOTTLE)).size();
+        ((DispenserBlockAccessor) Blocks.DISPENSER).betterbees$dispenseFrom(helper.getLevel(), helper.getLevel().getBlockState(absolute), absolute);
+        int after = helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, area,
+                entity -> entity.getItem().is(Items.HONEY_BOTTLE)).size();
+        VersionHooks.assertValueEqual(helper, after, before + 1, "full inventory ejects filled bottle");
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), 18, "each pulse costs once");
+
+        helper.setBlock(pos, Blocks.DROPPER.defaultBlockState().setValue(DispenserBlock.FACING, Direction.NORTH));
+        dispenser = VersionHooks.getBlockEntity(helper, pos, DispenserBlockEntity.class);
+        dispenser.setItem(0, new ItemStack(Items.GLASS_BOTTLE));
+        ((DispenserBlockAccessor) Blocks.DROPPER).betterbees$dispenseFrom(helper.getLevel(), helper.getLevel().getBlockState(absolute), absolute);
+        VersionHooks.assertValueEqual(helper, HiveHoneyService.get(hive), 18, "dropper must not harvest");
+
+        helper.setBlock(HIVE_POS, Blocks.WATER);
+        helper.setBlock(pos, Blocks.DISPENSER.defaultBlockState().setValue(DispenserBlock.FACING, Direction.NORTH));
+        dispenser = VersionHooks.getBlockEntity(helper, pos, DispenserBlockEntity.class);
+        dispenser.setItem(0, new ItemStack(Items.GLASS_BOTTLE));
+        ((DispenserBlockAccessor) Blocks.DISPENSER).betterbees$dispenseFrom(helper.getLevel(), helper.getLevel().getBlockState(absolute), absolute);
+        VersionHooks.assertTrue(helper, dispenser.getItem(0).is(Items.POTION), "water bottling delegates to vanilla");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void storedBeeRemembersItsReleaseHive(GameTestHelper helper) {
+        BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        ((HiveMemory) bee).betterbees$setMemorizedHome(hive.getBlockPos().east(4));
+        hive.storeBee(BeehiveBlockEntity.Occupant.of(bee));
+        bee.discard();
+        var released = ((BeehiveAccessor) hive).betterbees$releaseAllOccupants(
+                hive.getBlockState(), BeehiveBlockEntity.BeeReleaseStatus.EMERGENCY);
+        VersionHooks.assertValueEqual(helper, released.size(), 1, "stored bee can leave moved hive");
+        VersionHooks.assertValueEqual(helper, ((HiveMemory) released.get(0)).betterbees$getMemorizedHome(),
+                hive.getBlockPos(), "released bee adopts actual hive position");
+        released.forEach(Entity::discard);
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
     public static void collectiveFlowerScanHonorsPerHiveBudget(GameTestHelper helper) {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
         HiveFlowerIndex index = ((HiveFlowerKnowledge) hive).betterbees$getFlowerIndex();

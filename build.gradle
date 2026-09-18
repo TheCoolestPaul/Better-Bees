@@ -11,6 +11,13 @@ group = mod_group_id
 
 def versionProjects = subprojects.findAll { it.name.startsWith('mc') || it.name.startsWith('fabricMc') }
 
+if (providers.gradleProperty('withCreate').map { it.toBoolean() }.getOrElse(false)) {
+    def requested = gradle.startParameter.taskNames
+    if (requested.isEmpty() || requested.any { !it.startsWith(':mc1_21_1:') }) {
+        throw new GradleException('withCreate supports explicit :mc1_21_1:<task> tasks only (NeoForge 1.21.1).')
+    }
+}
+
 tasks.register('buildAll') {
     group = 'build'
     description = 'Builds every supported Minecraft artifact.'

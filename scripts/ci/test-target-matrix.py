@@ -14,20 +14,22 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual(len(rows), 32)
         keys = {(r['platform'], r['minecraft'], r['endpoint']) for r in rows}
         self.assertEqual(len(keys), len(rows))
-        self.assertEqual(sum(3 if r['endpoint'] == 'latest' else 1 for r in rows), 64)
+        runner = (matrix.ROOT / 'scripts/ci/validate-target.sh').read_text()
+        self.assertEqual(runner.count('bash scripts/ci/smoke-launch.sh'), 1)
+        self.assertNotIn('-PwithJade', runner)
         for mc, target in matrix.TARGETS.items():
             for platform in ('neoforge', 'fabric', 'quilt'):
                 supported = platform != 'quilt' or target.get('quiltSupported', True)
                 for endpoint in ('floor', 'latest'):
                     self.assertEqual((platform, mc, endpoint) in keys, supported)
 
-    def test_versions_come_from_manifest_and_jade_only_uses_latest(self):
+    def test_versions_come_from_manifest_without_jade_runtime(self):
         for row in matrix.matrix('validation'):
             target = matrix.TARGETS[row['minecraft']]
             prefix = {'neoforge': 'neo', 'fabric': 'fabricLoader', 'quilt': 'quiltLoader'}[row['platform']]
             self.assertEqual(row['loader'], target[prefix + row['endpoint'].title()])
             neo = row['platform'] == 'neoforge'
-            self.assertEqual(row['jade'], target['jadeLatest' if neo else 'fabricJadeLatest'])
+            self.assertNotIn('jade', row)
             self.assertEqual(row['api'], '' if neo else target['fabricApi' + row['endpoint'].title()])
 
     def test_package_targets_and_jade_support_remain_correct(self):

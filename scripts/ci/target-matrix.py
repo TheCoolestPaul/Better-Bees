@@ -31,7 +31,6 @@ def matrix(kind):
                         "project": target["project" if neo else "fabricProject"],
                         "loader": target[loader_key + endpoint],
                         "api": "" if neo else target["fabricApi" + endpoint],
-                        "jade": target["jadeLatest" if neo else "fabricJadeLatest"],
                     })
         elif kind == "neo":
             versions = endpoint_values(target, "neoFloor", "neoLatest")

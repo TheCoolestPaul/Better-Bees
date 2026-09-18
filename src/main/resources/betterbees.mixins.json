@@ -22,6 +22,7 @@
     "HiveNavigationMixin",
     "BeehiveOccupantMixin",
     "DispenserBlockAccessor",
+    "DispenserBottleMixin",
     "ShearsDispenseItemBehaviorMixin",
     "WalkNodeEvaluatorMixin"
   ],

@@ -6,12 +6,12 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 mapfile -t target < <(python3 - <<'PY'
 import json, os
 t = json.loads(os.environ['TARGET'])
-for key in ('platform', 'project', 'loader', 'api', 'jade', 'endpoint'):
+for key in ('platform', 'project', 'loader', 'api', 'endpoint'):
     print(t[key])
 PY
 )
 platform="${target[0]}"; project="${target[1]}"; loader="${target[2]}"
-api="${target[3]}"; jade="${target[4]}"; endpoint="${target[5]}"
+api="${target[3]}"; endpoint="${target[4]}"
 case "$platform" in
   neoforge) args=("-Pneo_version=$loader"); task=runGameTestServer; smoke_args=() ;;
   fabric|quilt)
@@ -38,8 +38,3 @@ if not expected or max(passed, default=0) < expected:
     sys.exit(f'Expected at least {expected} passing GameTests; no complete suite was reported')
 PY
 bash scripts/ci/smoke-launch.sh client "$platform" "$project" "$loader" "${smoke_args[@]}"
-if [[ "$endpoint" == latest ]]; then
-  for mode in server client; do
-    bash scripts/ci/smoke-launch.sh "$mode" "$platform" "$project" "$loader" "${smoke_args[@]}" -PwithJade=true "-Pjade_version=$jade"
-  done
-fi

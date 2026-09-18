@@ -14,11 +14,13 @@ FATAL = re.compile(
     r'NoClassDefFoundError|NoSuchMethodError|BUILD FAILED', re.I)
 
 
-def classify(text, mode, platform, jade=False):
+def classify(text, mode, platform, jade=False, create=False):
     failure = FATAL.search(text)
     if failure:
         return 2, f"Fatal launch error: {failure.group()}"
     markers = [("Better Bees initialization", r"Better Bees initialization complete")]
+    if create:
+        markers.append(("Create integration enabled", r"Better Bees Create integration enabled"))
     if platform != "neoforge":
         markers.append(("Fabric API loaded", r"(?:- fabric-api\s|\|\s*fabric-api\s*\|)"))
     if mode == "server":
@@ -42,7 +44,8 @@ if __name__ == "__main__":
     parser.add_argument("mode", choices=("client", "server"))
     parser.add_argument("platform", choices=("neoforge", "fabric", "quilt"))
     parser.add_argument("--jade", action="store_true")
+    parser.add_argument("--create", action="store_true")
     args = parser.parse_args()
-    status, message = classify(args.log.read_text(errors="replace"), args.mode, args.platform, args.jade)
+    status, message = classify(args.log.read_text(errors="replace"), args.mode, args.platform, args.jade, args.create)
     print(message)
     raise SystemExit(status)
