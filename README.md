@@ -196,7 +196,8 @@ with two profiles. Manual runs from **Actions > CI > Run workflow** default to
 |---|---|---|
 | Routine | PRs, `main` pushes, default manual run | **13**: 12 minimum-stack NeoForge/Fabric artifact builds and GameTest suites, plus tooling |
 | Documentation only | PRs and pushes changing only `README.md` or Markdown files under `docs/` | **1**: tooling |
-| Full | Every release; selectable manual run | **36**: 32 endpoint jobs, three world-upgrade chains, plus tooling |
+| Full | Every release; selectable manual run | **33**: 32 endpoint jobs plus tooling |
+| World upgrades | Persistence/Minecraft-target changes, or explicitly requested | **3 additional** sequential upgrade jobs, independent of profile |
 
 Counts exclude separate release packaging and publishing jobs. Tooling runs the
 Python and shell checks and the shared performance-policy test once. Routine
@@ -212,12 +213,33 @@ history, and empty or unusable diffs run runtime validation. Manual runs and
 releases always run the requested profile. Documentation changes still trigger
 CI and report completed checks.
 
-The three full-profile sequential world-upgrade jobs protect saved bee, honey,
+Per-version GameTests always retain the focused persistence checks for honey,
+hive occupants, and hive-item data. Full validation does not automatically require
+the sequential world-upgrade chain. Upgrade coverage is selected when the diff
+changes persistence implementations, registry definitions, honey storage,
+version hooks, mixin configuration, Minecraft targets/module definitions, or the
+upgrade harness. Ordinary AI, pathfinding, and sound changes do not select it.
+The path rules live in `scripts/ci/validation-scope.py`; update them when adding
+new persistence code.
+
+Upgrade selection compares PR/push revisions as above. Releases compare against
+the last published release tag, so earlier persistence changes in the release
+are included. Manual CI compares against the selected revision's parent. Missing
+or unusable history conservatively selects upgrades; an empty valid diff does not.
+Check `world_upgrade` in the CI or Release run form to force all three chains.
+
+The three sequential world-upgrade jobs protect saved bee, honey,
 and hive-item data using normal dedicated
 servers that save and reopen the same world (GameTest runners can reset worlds).
 Missing upgrade fixtures after the first version hop fail instead of being
 recreated. Upgrade runs require a fresh directory and refuse to downgrade an
 existing world. Normal smoke launches also use isolated CI run directories.
+These fixtures are created using the current mod code on the oldest supported
+Minecraft version; they do not test saves produced by a previous mod release.
+Endpoint jobs run at most four at a time, and upgrade chains run one at a time,
+to reduce simultaneous dependency downloads. Temporary HTTP download failures
+during Gradle configuration can retry twice with backoff before any task starts;
+executed GameTests and world upgrades are never replayed by this retry wrapper.
 
 Create and Jade runtime compatibility testing remains opt-in locally; neither
 automated profile enables them. CI still compiles the integrations and validates

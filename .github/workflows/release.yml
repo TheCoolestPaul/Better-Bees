@@ -12,6 +12,10 @@ on:
         description: Strict SemVer used only for custom
         required: false
         type: string
+      world_upgrade:
+        description: Force sequential saved-world upgrade tests (also selected automatically for persistence changes)
+        type: boolean
+        default: false
 permissions: { contents: read }
 concurrency: { group: release-main, cancel-in-progress: false }
 
@@ -26,6 +30,7 @@ jobs:
       prerelease: ${{ steps.version.outputs.is_prerelease }}
       modrinth_type: ${{ steps.version.outputs.modrinth_version_type }}
       publish: ${{ steps.matrix.outputs.publish }}
+      base_ref: ${{ steps.history.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with: { ref: main }
@@ -35,6 +40,7 @@ jobs:
         env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}' }
         run: |
           tag="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '[.[] | select(.draft == false)] | sort_by(.published_at) | last | .tag_name // ""')"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           [[ -z "$tag" ]] && echo version=none >> "$GITHUB_OUTPUT" || echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
       - id: version
         env:
@@ -66,6 +72,8 @@ jobs:
       ref: ${{ needs.resolve.outputs.sha }}
       version: ${{ needs.resolve.outputs.version }}
       profile: full
+      base_ref: ${{ needs.resolve.outputs.base_ref }}
+      world_upgrade: ${{ inputs.world_upgrade }}
 
   package:
     needs: [resolve, validation]

@@ -31,7 +31,7 @@ for target in "${targets[@]}"; do
   args=(--no-daemon "-PsmokeGameDirectory=$upgrade_dir" -PupgradeValidation=true "-PupgradeRequireExisting=$require_existing")
   if [[ "$platform" != neoforge ]]; then args+=("-Pfabric_target=$target"); fi
   log_file="$upgrade_dir/upgrade-$target.log"
-  ./gradlew "${args[@]}" "${extra[@]}" ":$target:runServer" 2>&1 | tee "$log_file"
+  bash scripts/ci/gradle-with-retry.sh "${args[@]}" "${extra[@]}" ":$target:runServer" 2>&1 | tee "$log_file"
   grep -Fq 'Better Bees upgrade fixture verified' "$log_file" || { echo "Upgrade fixture verification failed for $target" >&2; exit 1; }
   require_existing=true
 done

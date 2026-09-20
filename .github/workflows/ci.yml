@@ -9,6 +9,10 @@ on:
         type: choice
         default: routine
         options: [routine, full]
+      world_upgrade:
+        description: Force sequential saved-world upgrade tests (also selected automatically for persistence changes)
+        type: boolean
+        default: false
 permissions: { contents: read }
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -20,4 +24,5 @@ jobs:
     with:
       ref: ${{ github.sha }}
       profile: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'routine' }}
-      base_ref: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+      base_ref: ${{ github.event.pull_request.base.sha || github.event.before || format('{0}^', github.sha) }}
+      world_upgrade: ${{ github.event_name == 'workflow_dispatch' && inputs.world_upgrade || false }}

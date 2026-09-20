@@ -14,6 +14,10 @@ on:
       base_ref:
         default: ''
         type: string
+      world_upgrade:
+        description: Force the sequential saved-world upgrade tests
+        default: false
+        type: boolean
 permissions: { contents: read }
 
 jobs:
@@ -23,6 +27,7 @@ jobs:
     outputs:
       targets: ${{ steps.matrix.outputs.targets }}
       runtime: ${{ steps.scope.outputs.runtime }}
+      world_upgrade: ${{ steps.scope.outputs.world_upgrade }}
     steps:
       - uses: actions/checkout@v7
         with: { ref: '${{ inputs.ref }}', fetch-depth: 0 }
@@ -38,7 +43,8 @@ jobs:
           REF: ${{ inputs.ref }}
           PROFILE: ${{ inputs.profile }}
           VERSION: ${{ inputs.version }}
-        run: python3 scripts/ci/validation-scope.py --event "$EVENT" --base "$BASE" --ref "$REF" --profile "$PROFILE" --version "$VERSION" --github-output "$GITHUB_OUTPUT"
+          WORLD_UPGRADE: ${{ inputs.world_upgrade }}
+        run: python3 scripts/ci/validation-scope.py --event "$EVENT" --base "$BASE" --ref "$REF" --profile "$PROFILE" --version "$VERSION" --world-upgrade "$WORLD_UPGRADE" --github-output "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v5
         with:
           java-version: |
@@ -52,13 +58,14 @@ jobs:
           python3 scripts/ci/test-target-matrix.py
           python3 scripts/ci/test-validation-scope.py
           python3 scripts/ci/test-validate-target.py
+          python3 scripts/ci/test-gradle-with-retry.py
           python3 scripts/ci/test-check-smoke.py
           python3 scripts/ci/test-smoke-launch.py
-          for script in scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh scripts/ci/world-upgrade.sh scripts/ci/validate-target.sh; do
+          for script in scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh scripts/ci/world-upgrade.sh scripts/ci/validate-target.sh scripts/ci/gradle-with-retry.sh; do
             bash -n "$script"
           done
       - name: Shared performance policy
-        run: ./gradlew --no-daemon performancePolicyTest
+        run: bash scripts/ci/gradle-with-retry.sh --no-daemon performancePolicyTest
 
   endpoint:
     needs: tooling
@@ -68,6 +75,8 @@ jobs:
     timeout-minutes: 40
     strategy:
       fail-fast: false
+      # Avoid a burst of Maven requests from the full release matrix.
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.tooling.outputs.targets) }}
     steps:
       - uses: actions/checkout@v7
@@ -101,12 +110,13 @@ jobs:
 
   world_upgrade:
     needs: tooling
-    if: inputs.profile == 'full' && needs.tooling.outputs.runtime == 'true'
+    if: needs.tooling.outputs.world_upgrade == 'true'
     name: Sequential ${{ matrix.platform }} world upgrade
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix: { platform: [neoforge, fabric, quilt] }
     steps:
       - uses: actions/checkout@v7

@@ -77,6 +77,68 @@ class ScopeTests(unittest.TestCase):
         self.git('commit', '-qm', 'rename')
         self.assertTrue(self.required(self.git('rev-parse', 'HEAD')))
 
+    def test_upgrade_sensitive_paths(self):
+        for path in ('gradle/targets.json', 'settings.gradle', 'versions/26.2/build.gradle',
+                     'fabric-versions/26.2/build.gradle',
+                     'src/main/java/com/betterbees/registry/ModDataComponents.java',
+                     'fabric/src/main/java/com/betterbees/registry/ModMemoryTypes.java',
+                     'versions/1.21.8/src/main/java/com/betterbees/mixin/BeePersistenceMixin.java',
+                     'versions/1.21.4/src/main/java/com/betterbees/platform/VersionHooks.java',
+                     'src/main/java/com/betterbees/util/BeePersistentState.java',
+                     'src/main/java/com/betterbees/hive/HiveHoneyStorage.java',
+                     'src/main/resources/betterbees.mixins.json',
+                     'scripts/ci/world-upgrade.sh'):
+            with self.subTest(path=path):
+                self.assertTrue(scope.upgrade_sensitive([path]))
+        self.assertFalse(scope.upgrade_sensitive([
+            'README.md', 'gradle.properties',
+            'src/main/java/com/betterbees/ai/HivePathQueue.java',
+            'src/main/java/com/betterbees/audio/BeeLoopSelector.java',
+            'src/main/java/com/betterbees/hive/HiveRuntimeState.java']))
+
+    def upgrade(self, ref, **kwargs):
+        return scope.world_upgrade_required(kwargs.pop('base', self.base), ref, repo=self.repo, **kwargs)
+
+    def test_upgrade_opt_in_and_history_fallback(self):
+        ref = self.commit({'src/code.java': 'ordinary change'})
+        self.assertFalse(self.upgrade(ref))
+        self.assertFalse(self.upgrade(self.base))
+        self.assertTrue(self.upgrade(ref, requested=True))
+        for base in ('', 'unavailable', '0' * 40):
+            self.assertTrue(self.upgrade(ref, base=base))
+        self.assertTrue(self.upgrade('unavailable'))
+
+    def test_release_diff_includes_earlier_persistence_changes(self):
+        self.git('tag', 'v1.0.0', self.base)
+        persistence = self.commit({'src/main/java/com/betterbees/mixin/BeePersistenceMixin.java': 'saved data'})
+        ref = self.commit({'README.md': 'release notes'})
+        self.assertTrue(self.upgrade(ref, base='v1.0.0'))
+        self.assertFalse(self.upgrade(ref, base=persistence))
+
+    def test_removing_persistence_code_still_requires_upgrade(self):
+        name = 'src/main/java/com/betterbees/mixin/BeePersistenceMixin.java'
+        base = self.commit({name: 'saved data'})
+        (self.repo / 'docs').mkdir()
+        self.git('mv', name, 'docs/removed.md')
+        self.git('commit', '-qm', 'remove persistence implementation')
+        self.assertTrue(self.upgrade(self.git('rev-parse', 'HEAD'), base=base))
+
+    def test_full_release_keeps_runtime_without_forcing_upgrade(self):
+        ref = self.commit({'README.md': 'release notes'})
+        self.assertTrue(self.required(ref, profile='full', version='1.0.1'))
+        self.assertFalse(self.upgrade(ref))
+
+    def test_cli_emits_independent_coverage_outputs(self):
+        import sys
+        ref = self.commit({'README.md': 'updated'})
+        output = self.repo / 'output.txt'
+        result = subprocess.check_output([
+            sys.executable, str(Path(scope.__file__).resolve()), '--event', 'push',
+            '--base', self.base, '--ref', ref, '--world-upgrade', 'true',
+            '--github-output', str(output)], cwd=self.repo, text=True)
+        self.assertEqual(result, 'runtime=false\nworld_upgrade=true\n')
+        self.assertEqual(output.read_text(), result)
+
 
 if __name__ == '__main__':
     unittest.main()
