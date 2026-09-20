@@ -15,6 +15,25 @@ def endpoint_values(target, floor_key, latest_key):
     return list(dict.fromkeys(values))
 
 
+def release_dependencies(minecraft, platform, target):
+    def dependency(name, project_id, version_range, dependency_type="optional"):
+        return dict(name=name, project_id=project_id, version_range=version_range,
+                    dependency_type=dependency_type)
+
+    neo = platform == "neoforge"
+    dependencies = [dependency("Jade", "nvQzSEkH",
+                               target["jadeRange" if neo else "fabricJadeModrinthRange"])]
+    if not neo:
+        dependencies.append(dependency("Fabric API", "P7dR8mSH", target["fabricApiRange"], "required"))
+    # These adapters are packaged only in the 1.21.1 artifacts.
+    if minecraft == "1.21.1":
+        if neo:
+            dependencies.append(dependency("Create", "LNytGWDc", "[6.0.10,6.1)"))
+        dependencies.append(dependency("The Bumblezone", "38tpSycf" if neo else "eA8SXqWL",
+                                       "[7.16.1,7.17)" if neo else "[7.16.0,7.17)"))
+    return dependencies
+
+
 def matrix(kind, profile="routine"):
     if profile not in ("routine", "full"):
         raise ValueError(f"Unknown validation profile: {profile}")
@@ -80,6 +99,7 @@ def matrix(kind, profile="routine"):
                     "platform": platform,
                     "jadeRange": target["jadeRange"] if platform == "neoforge" else target["fabricJadeModrinthRange"],
                     "fabricApiRange": target.get("fabricApiRange", ""),
+                    "dependencies": release_dependencies(minecraft, platform, target),
                     "loaders": "fabric quilt" if platform == "fabric" and target.get("quiltSupported", True) else platform,
                 })
         else:
