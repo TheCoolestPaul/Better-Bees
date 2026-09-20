@@ -53,7 +53,8 @@ def publish(source, version, tag):
     git('config', 'user.name', os.environ['RELEASE_BOT_NAME'])
     git('config', 'user.email', os.environ['RELEASE_BOT_EMAIL'])
     if changed:
-        git('commit', '-m', f'Release {version}')
+        # The release workflow already validated this version before publication.
+        git('commit', '-m', f'Release {version} [skip ci]')
     commit = git('rev-parse', 'HEAD')
     if git('rev-parse', 'HEAD^{tree}') != expected_tree:
         raise ValueError('Release commit differs from validated release tree')
