@@ -59,6 +59,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(self.remote_git('diff', '--name-only', self.source, commit), 'gradle.properties')
         self.assertEqual(self.remote_git('show', f'{commit}:gradle.properties'), 'mod_version=1.6.0')
         self.assertEqual(self.remote_git('show', '-s', '--format=%an', commit), 'release[bot]')
+        self.assertIn('[skip ci]', self.remote_git('show', '-s', '--format=%B', commit))
 
     def test_retry_after_push_reuses_commit(self):
         self.success(self.publish())
