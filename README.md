@@ -254,8 +254,9 @@ failure; mod failures are never retried. Failed jobs retain startup logs,
 crash reports, and available test reports for seven days. Ordinary CI retains
 no release jars.
 
-Releases are self-service from **Actions > Release > Run workflow**. Choose
-`current`, `patch`, `minor`, `major`, or `custom`; supply `custom_version` only
+Releases are self-service from **Actions > Release > Run workflow** on `main`.
+The default is `patch`; choose `current`, `patch`, `minor`, `major`, or `custom`;
+supply `custom_version` only
 for a custom strict SemVer such as `1.1.0-beta.1`. GitHub cannot show values
 read from the repository before the form is submitted. The first job and the
 run summary report the current project version, last published release,
@@ -264,7 +265,12 @@ calculated release version, and `v<version>` tag before expensive validation.
 The workflow applies the calculated version to full validation, then separately
 rebuilds and verifies all twelve floor-built jars and checksums. Only after
 all checks pass does it update `mod_version` (when needed), commit, tag, and
-publish the GitHub Release. Prerelease suffixes automatically create GitHub
+publish the GitHub Release. The private release App pushes the version-only
+commit and tag atomically using its narrowly scoped installation token and
+ruleset bypass. All other contributors retain the normal PR requirements.
+Configure the App and the main-only `release` environment using
+[release App setup and recovery](docs/release-app.md) before running releases.
+Prerelease suffixes automatically create GitHub
 prereleases. A changed `main`, invalid/backward version, failed test, or jar
 verification failure leaves the repository unpublished.
 
@@ -295,7 +301,10 @@ The twelve target jars, individual checksum files, and combined `SHA256SUMS`
 manifest are retained as Actions artifacts for 14 days and attached to the
 GitHub release. Safe retries may
 replace GitHub assets only when an existing `v<version>` tag still points to
-the exact tested commit; the workflow never moves a tag. The old nonrelease tag
+the tested source or its verified version-only child on main; the workflow
+never moves a tag. Retry failed publishing jobs to preserve the resolved version,
+or use `custom` with the exact version for a new recovery run while main still
+matches that release. The old nonrelease tag
 `v0.1.0-NEO-1.21.1` is retained but does not participate in version selection.
 
 ## Compatibility

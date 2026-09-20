@@ -59,6 +59,7 @@ jobs:
           python3 scripts/ci/test-validation-scope.py
           python3 scripts/ci/test-validate-target.py
           python3 scripts/ci/test-gradle-with-retry.py
+          python3 scripts/ci/test-publish-release-git.py
           python3 scripts/ci/test-check-smoke.py
           python3 scripts/ci/test-smoke-launch.py
           for script in scripts/ci/smoke-launch.sh scripts/ci/verify-jar.sh scripts/ci/world-upgrade.sh scripts/ci/validate-target.sh scripts/ci/gradle-with-retry.sh; do
