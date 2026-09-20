@@ -51,6 +51,11 @@ public final class ModernGameTestRegistrar {
         register(event, environment, "entryRechecksFireAfterSharedSafeResult", BetterBeesGameTests::entryRechecksFireAfterSharedSafeResult);
         register(event, environment, "replacementHiveDoesNotReuseFireCache", BetterBeesGameTests::replacementHiveDoesNotReuseFireCache);
         register(event, environment, "blockedHivePathsRetryAfterExecution", BetterBeesGameTests::blockedHivePathsRetryAfterExecution);
+        register(event, environment, "returningBeeFindsAlternativeToFullHome", BetterBeesGameTests::returningBeeFindsAlternativeToFullHome);
+        register(event, environment, "totalBeelocationAcceptsLargerNests", BetterBeesGameTests::totalBeelocationAcceptsLargerNests);
+        register(event, environment, "totalBeelocationRetainsVanillaRequirements", BetterBeesGameTests::totalBeelocationRetainsVanillaRequirements);
+        register(event, environment, "homeFillingWhilePathQueuedReleasesReturningBee", BetterBeesGameTests::homeFillingWhilePathQueuedReleasesReturningBee);
+        register(event, environment, "homeFillingDuringTravelStopsOldRoute", BetterBeesGameTests::homeFillingDuringTravelStopsOldRoute);
         register(event, environment, "hivePathsUseLevelTickQueue", BetterBeesGameTests::hivePathsUseLevelTickQueue);
         register(event, environment, "queuedHivePathsRevalidateBeforeExecution", BetterBeesGameTests::queuedHivePathsRevalidateBeforeExecution);
         register(event, environment, "queuedHivePathWaitDoesNotAdvanceTimers", BetterBeesGameTests::queuedHivePathWaitDoesNotAdvanceTimers);
@@ -93,7 +98,8 @@ public final class ModernGameTestRegistrar {
         ResourceLocation name = ResourceLocation.fromNamespaceAndPath("betterbees", path);
         ResourceLocation structure = ResourceLocation.fromNamespaceAndPath("betterbees", "empty");
         TestData<Holder<TestEnvironmentDefinition>> data = new TestData<>(
-                environment, structure, methodName.equals("sixtyBeesReturnToThreeHives") || methodName.equals("blockedHivePathsRetryAfterExecution") || methodName.equals("adaptiveSensingPermitsMating") ? 400 : 100, 0, true, Rotation.NONE);
+                environment, structure, methodName.equals("returningBeeFindsAlternativeToFullHome") ? 800
+                        : methodName.equals("sixtyBeesReturnToThreeHives") || methodName.equals("blockedHivePathsRetryAfterExecution") || methodName.equals("adaptiveSensingPermitsMating") ? 400 : 100, 0, true, Rotation.NONE);
         event.registerTest(name, new TypedTest(data, body));
     }
 
