@@ -195,29 +195,58 @@ with two profiles. Manual runs from **Actions > CI > Run workflow** default to
 | Profile | When | Jobs |
 |---|---|---|
 | Routine | PRs, `main` pushes, default manual run | **13**: 12 minimum-stack NeoForge/Fabric artifact builds and GameTest suites, plus tooling |
-| Documentation only | PRs and pushes changing only `README.md` or Markdown files under `docs/` | **1**: tooling |
-| Full | Every release; selectable manual run | **36**: 32 endpoint jobs, three world-upgrade chains, plus tooling |
+| Tooling/docs only | PRs and pushes changing only workflow YAML, CI Python/shell scripts, `README.md`, or Markdown under `docs/` | **1**: Python/shell tooling checks; no Java or Gradle setup |
+| Full | Every release; selectable manual run | **33**: 32 endpoint jobs plus tooling |
+| World upgrades | Persistence/Minecraft-target changes, or explicitly requested | **3 additional** sequential upgrade jobs, independent of profile |
 
 Counts exclude separate release packaging and publishing jobs. Tooling runs the
-Python and shell checks and the shared performance-policy test once. Routine
+Python and shell checks; it also runs the shared performance-policy test once
+when runtime validation is required. Routine
 endpoints do not prepare client assets, install graphics packages, or start clients.
 Full validation covers minimum and latest dependency stacks for six NeoForge,
 six Fabric, and four supported Quilt targets, with 32 client startup checks.
 Quilt runs GameTests and client startup without a separate artifact build;
 runtime tasks still compile Minecraft code as needed.
 
-Documentation classification compares the PR base commit with its checked-out
-merge revision, or the push's previous and new commits. Mixed changes, missing
-history, and empty or unusable diffs run runtime validation. Manual runs and
-releases always run the requested profile. Documentation changes still trigger
-CI and report completed checks.
+Tooling/docs classification compares the PR base commit with its checked-out
+merge revision, or the push's previous and new commits. Changes to mod source,
+resources, Gradle files, dependencies, or other unrecognized paths still run
+runtime validation, even when mixed with tooling edits. CI's Gradle init script
+and asset properties also retain runtime coverage. Missing history and empty or
+unusable diffs run runtime validation. Manual runs and releases always run the
+requested profile. Tooling/docs changes still report the required
+`validation / tooling` check. Use a manual full run to exercise changes to the
+runtime harness against Minecraft.
 
-The three full-profile sequential world-upgrade jobs protect saved bee, honey,
+Per-version GameTests always retain the focused persistence checks for honey,
+hive occupants, and hive-item data. Full validation does not automatically require
+the sequential world-upgrade chain. Upgrade coverage is selected when the diff
+changes persistence implementations, registry definitions, honey storage,
+version hooks, mixin configuration, or Minecraft targets/module definitions.
+Editing the upgrade harness alone does not start Minecraft; use the explicit
+`world_upgrade` input to exercise it. Ordinary AI, pathfinding, and sound changes
+do not select upgrade coverage.
+The path rules live in `scripts/ci/validation-scope.py`; update them when adding
+new persistence code.
+
+Upgrade selection compares PR/push revisions as above. Releases compare against
+the last published release tag, so earlier persistence changes in the release
+are included. Manual CI compares against the selected revision's parent. Missing
+or unusable history conservatively selects upgrades; an empty valid diff does not.
+Check `world_upgrade` in the CI or Release run form to force all three chains.
+
+The three sequential world-upgrade jobs protect saved bee, honey,
 and hive-item data using normal dedicated
 servers that save and reopen the same world (GameTest runners can reset worlds).
 Missing upgrade fixtures after the first version hop fail instead of being
 recreated. Upgrade runs require a fresh directory and refuse to downgrade an
 existing world. Normal smoke launches also use isolated CI run directories.
+These fixtures are created using the current mod code on the oldest supported
+Minecraft version; they do not test saves produced by a previous mod release.
+Endpoint jobs run at most four at a time, and upgrade chains run one at a time,
+to reduce simultaneous dependency downloads. Temporary HTTP download failures
+during Gradle configuration can retry twice with backoff before any task starts;
+executed GameTests and world upgrades are never replayed by this retry wrapper.
 
 Create and Jade runtime compatibility testing remains opt-in locally; neither
 automated profile enables them. CI still compiles the integrations and validates
@@ -232,8 +261,9 @@ failure; mod failures are never retried. Failed jobs retain startup logs,
 crash reports, and available test reports for seven days. Ordinary CI retains
 no release jars.
 
-Releases are self-service from **Actions > Release > Run workflow**. Choose
-`current`, `patch`, `minor`, `major`, or `custom`; supply `custom_version` only
+Releases are self-service from **Actions > Release > Run workflow** on `main`.
+The default is `patch`; choose `current`, `patch`, `minor`, `major`, or `custom`;
+supply `custom_version` only
 for a custom strict SemVer such as `1.1.0-beta.1`. GitHub cannot show values
 read from the repository before the form is submitted. The first job and the
 run summary report the current project version, last published release,
@@ -242,7 +272,12 @@ calculated release version, and `v<version>` tag before expensive validation.
 The workflow applies the calculated version to full validation, then separately
 rebuilds and verifies all twelve floor-built jars and checksums. Only after
 all checks pass does it update `mod_version` (when needed), commit, tag, and
-publish the GitHub Release. Prerelease suffixes automatically create GitHub
+publish the GitHub Release. The private release App pushes the version-only
+commit and tag atomically using its narrowly scoped installation token and
+ruleset bypass. All other contributors retain the normal PR requirements.
+Configure the App and the main-only `release` environment using
+[release App setup and recovery](docs/release-app.md) before running releases.
+Prerelease suffixes automatically create GitHub
 prereleases. A changed `main`, invalid/backward version, failed test, or jar
 verification failure leaves the repository unpublished.
 
@@ -273,7 +308,10 @@ The twelve target jars, individual checksum files, and combined `SHA256SUMS`
 manifest are retained as Actions artifacts for 14 days and attached to the
 GitHub release. Safe retries may
 replace GitHub assets only when an existing `v<version>` tag still points to
-the exact tested commit; the workflow never moves a tag. The old nonrelease tag
+the tested source or its verified version-only child on main; the workflow
+never moves a tag. Retry failed publishing jobs to preserve the resolved version,
+or use `custom` with the exact version for a new recovery run while main still
+matches that release. The old nonrelease tag
 `v0.1.0-NEO-1.21.1` is retained but does not participate in version selection.
 
 ## Compatibility

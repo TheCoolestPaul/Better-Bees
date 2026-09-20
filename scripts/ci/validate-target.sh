@@ -40,7 +40,7 @@ test_log="build/smoke/gametest-${platform}-${project}-${endpoint}.log"
 tasks=()
 if [[ "$platform" != quilt ]]; then tasks+=(":$project:build"); fi
 tasks+=(":$project:$task")
-./gradlew --no-daemon "${args[@]}" "${tasks[@]}" 2>&1 | tee "$test_log"
+bash scripts/ci/gradle-with-retry.sh --no-daemon "${args[@]}" "${tasks[@]}" 2>&1 | tee "$test_log"
 # Some loader bootstrap failures exit zero. Require actual suite completion,
 # including at least all of our shared tests, before accepting the Gradle result.
 python3 - "$test_log" <<'PY'

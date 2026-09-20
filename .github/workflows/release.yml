@@ -5,13 +5,17 @@ on:
       release_mode:
         description: Version to release
         required: true
-        default: current
+        default: patch
         type: choice
         options: [current, patch, minor, major, custom]
       custom_version:
         description: Strict SemVer used only for custom
         required: false
         type: string
+      world_upgrade:
+        description: Force sequential saved-world upgrade tests (also selected automatically for persistence changes)
+        type: boolean
+        default: false
 permissions: { contents: read }
 concurrency: { group: release-main, cancel-in-progress: false }
 
@@ -26,7 +30,11 @@ jobs:
       prerelease: ${{ steps.version.outputs.is_prerelease }}
       modrinth_type: ${{ steps.version.outputs.modrinth_version_type }}
       publish: ${{ steps.matrix.outputs.publish }}
+      base_ref: ${{ steps.history.outputs.tag }}
     steps:
+      - name: Require main workflow revision
+        env: { WORKFLOW_REF: '${{ github.ref }}' }
+        run: test "$WORKFLOW_REF" = refs/heads/main || { echo 'Start releases from main only' >&2; exit 1; }
       - uses: actions/checkout@v7
         with: { ref: main }
       - id: source
@@ -35,6 +43,7 @@ jobs:
         env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}' }
         run: |
           tag="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '[.[] | select(.draft == false)] | sort_by(.published_at) | last | .tag_name // ""')"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           [[ -z "$tag" ]] && echo version=none >> "$GITHUB_OUTPUT" || echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
       - id: version
         env:
@@ -66,6 +75,8 @@ jobs:
       ref: ${{ needs.resolve.outputs.sha }}
       version: ${{ needs.resolve.outputs.version }}
       profile: full
+      base_ref: ${{ needs.resolve.outputs.base_ref }}
+      world_upgrade: ${{ inputs.world_upgrade }}
 
   package:
     needs: [resolve, validation]
@@ -115,28 +126,43 @@ jobs:
   publish_github:
     needs: [resolve, package]
     runs-on: ubuntu-latest
+    environment: release
     permissions: { contents: write }
     outputs: { commit: '${{ steps.git.outputs.commit }}' }
     steps:
+      - name: Authenticate release App
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Better-Bees
+          permission-contents: write
       - uses: actions/checkout@v7
-        with: { ref: '${{ needs.resolve.outputs.sha }}', fetch-depth: 0 }
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
       - uses: actions/download-artifact@v8
         with: { name: 'betterbees-${{ needs.resolve.outputs.version }}-validated', path: release-assets }
-      - name: Commit version and tag
-        id: git
-        env: { VERSION: '${{ needs.resolve.outputs.version }}', TAG: '${{ needs.resolve.outputs.tag }}', SHA: '${{ needs.resolve.outputs.sha }}' }
+      - name: Identify release bot
+        id: bot
+        env: { GH_TOKEN: '${{ steps.app.outputs.token }}', APP_SLUG: '${{ steps.app.outputs.app-slug }}' }
         run: |
-          set -euo pipefail
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$SHA" ]] || { echo 'main changed; rerun release' >&2; exit 1; }
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          sed -i "s/^mod_version=.*/mod_version=$VERSION/" gradle.properties
-          if ! git diff --quiet; then git add gradle.properties && git commit -m "Release $VERSION"; fi
-          commit="$(git rev-parse HEAD)"
-          existing="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
-          if [[ -n "$existing" && "$existing" != "$commit" ]]; then echo "$TAG already identifies $existing" >&2; exit 1; fi
-          if [[ -z "$existing" ]]; then git tag -a "$TAG" -m "Better Bees $VERSION"; git push --atomic origin HEAD:refs/heads/main refs/tags/$TAG; fi
-          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          login="${APP_SLUG}[bot]"
+          user_id="$(gh api "users/$login" --jq .id)"
+          echo "name=$login" >> "$GITHUB_OUTPUT"
+          echo "email=${user_id}+${login}@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+      - name: Commit version and tag atomically
+        id: git
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          RELEASE_BOT_NAME: ${{ steps.bot.outputs.name }}
+          RELEASE_BOT_EMAIL: ${{ steps.bot.outputs.email }}
+        run: python3 scripts/ci/publish-release-git.py
       - name: Create or update GitHub Release
         env: { GH_TOKEN: '${{ github.token }}', TAG: '${{ needs.resolve.outputs.tag }}', VERSION: '${{ needs.resolve.outputs.version }}', PRE: '${{ needs.resolve.outputs.prerelease }}' }
         run: |

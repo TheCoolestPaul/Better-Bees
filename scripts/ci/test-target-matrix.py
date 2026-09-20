@@ -59,16 +59,25 @@ class MatrixTests(unittest.TestCase):
     def test_workflow_routing(self):
         workflow = (matrix.ROOT / '.github/workflows/validate.yml').read_text()
         self.assertEqual(workflow.count('performancePolicyTest'), 1)
-        self.assertIn("if: inputs.profile == 'full' && needs.tooling.outputs.runtime == 'true'", workflow)
+        tooling = workflow.split('  endpoint:')[0]
+        for step in ('uses: actions/setup-java@v5', 'uses: gradle/actions/setup-gradle@v6',
+                     'name: Shared performance policy'):
+            self.assertIn(step + "\n        if: steps.scope.outputs.runtime == 'true'", tooling)
+        self.assertIn("if: needs.tooling.outputs.world_upgrade == 'true'", workflow)
+        self.assertNotIn("if: inputs.profile == 'full' && needs.tooling.outputs.runtime == 'true'", workflow)
         self.assertIn('platform: [neoforge, fabric, quilt]', workflow)
         self.assertIn("if: inputs.profile == 'full'\n", workflow)
         release = (matrix.ROOT / '.github/workflows/release.yml').read_text()
         self.assertIn('profile: full', release)
+        self.assertIn('base_ref: ${{ needs.resolve.outputs.base_ref }}', release)
+        self.assertIn('base_ref: ${{ steps.history.outputs.tag }}', release)
+        self.assertIn('world_upgrade: ${{ inputs.world_upgrade }}', release)
         self.assertIn('needs: [resolve, validation]', release)
         ci = (matrix.ROOT / '.github/workflows/ci.yml').read_text()
         self.assertIn("github.event_name == 'workflow_dispatch' && inputs.profile || 'routine'", ci)
         self.assertIn('github.event.pull_request.base.sha || github.event.before', ci)
         self.assertIn('cancel-in-progress: true', ci)
+        self.assertIn('inputs.world_upgrade', ci)
         self.assertNotIn('paths-ignore:', ci)
         self.assertNotIn('paths:', ci)
         for text in (workflow, ci, release):

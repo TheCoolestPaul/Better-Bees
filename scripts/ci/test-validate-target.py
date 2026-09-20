@@ -23,6 +23,7 @@ class RunnerTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.write('scripts/ci/validate-target.sh', (HERE / 'validate-target.sh').read_text())
+        self.write('scripts/ci/gradle-with-retry.sh', (HERE / 'gradle-with-retry.sh').read_text())
         self.write('src/main/java/com/betterbees/gametest/BetterBeesGameTests.java', '@GameTest(\n@GameTest(')
         self.write('gradlew', '#!/usr/bin/env bash\nprintf "%s\\n" "$@" >> gradle-args\n'
                    'echo "${TEST_MESSAGE-All 2 required tests passed}"\nexit "${GRADLE_EXIT-0}"\n')
