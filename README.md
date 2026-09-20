@@ -276,6 +276,15 @@ the exact tested commit; the workflow never moves a tag. The old nonrelease tag
 
 ## Compatibility
 
+Bumblezone integration is available on **Minecraft 1.21.1, NeoForge and
+Fabric/Quilt**. It preserves Comb Cutter harvesting, Essence of the Bees
+protection, Flower Headwear attraction, and variant breeding with Better Bees'
+Brain AI. Bumblezone remains optional. Local automated testing covers Jade on
+all three loaders and Create 6.0.10 together with Bumblezone and Jade on
+NeoForge. See [Bumblezone compatibility](docs/bumblezone-compatibility.md) for
+exact tested stacks, commands, results, and remaining client-validation limits.
+
+
 Create 6.0.10 is supported on **NeoForge 1.21.1**. Create remains optional and is
 never bundled. Deployers, including contraption-mounted deployers harvesting
 placed hives, use the configured bottle/shears harvest rules without disturbing

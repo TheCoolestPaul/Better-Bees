@@ -19,9 +19,11 @@ case "$mode" in
 esac
 jade=false
 create=false
+bumblezone=false
 for argument in "${@:5}"; do
   [[ "$argument" != "-PwithJade=true" ]] || jade=true
   [[ "$argument" != "-PwithCreate=true" ]] || create=true
+  [[ "$argument" != "-PwithBumblezone=true" ]] || bumblezone=true
 done
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -33,6 +35,10 @@ run_dir="$repo_root/build/smoke/runs/${mode}-${platform}-${project}-${loader_ver
 if [[ "$create" == true ]]; then
   log_file="${log_file%.log}-create.log"
   run_dir="${run_dir}-create"
+fi
+if [[ "$bumblezone" == true ]]; then
+  log_file="${log_file%.log}-bumblezone.log"
+  run_dir="${run_dir}-bumblezone"
 fi
 mkdir -p "$run_dir"
 if [[ "$mode" == "server" ]]; then
@@ -92,6 +98,7 @@ deadline=$((SECONDS + timeout_seconds))
 check_args=("$log_file" "$mode" "$platform")
 [[ "$jade" == false ]] || check_args+=(--jade)
 [[ "$create" == false ]] || check_args+=(--create)
+[[ "$bumblezone" == false ]] || check_args+=(--bumblezone)
 healthy_since=-1
 diagnostic='Waiting for launch output'
 while (( SECONDS < deadline )); do

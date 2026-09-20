@@ -29,13 +29,14 @@ repositories {
 
 def useQuilt = providers.gradleProperty('withQuilt').map { it.toBoolean() }.getOrElse(false)
 def withJade = providers.gradleProperty('withJade').map { it.toBoolean() }.getOrElse(false)
+def bumblezoneProfile = providers.gradleProperty('withBumblezone').map { it.toBoolean() }.getOrElse(false) && target.minecraft == '1.21.1'
 def acceptsOverrides = providers.gradleProperty('fabric_target').map { it == project.name }.getOrElse(false)
 def loaderVersion = (acceptsOverrides ? providers.gradleProperty(useQuilt ? 'quilt_loader_version' : 'fabric_loader_version') : providers.provider { null })
-        .getOrElse(useQuilt ? target.quiltLoaderFloor as String : target.fabricLoaderFloor as String)
+        .getOrElse(useQuilt ? target[bumblezoneProfile ? 'quiltLoaderLatest' : 'quiltLoaderFloor'] as String : target[bumblezoneProfile ? 'fabricLoaderLatest' : 'fabricLoaderFloor'] as String)
 def fabricApiVersion = (acceptsOverrides ? providers.gradleProperty('fabric_api_version') : providers.provider { null })
-        .getOrElse(target.fabricApiFloor as String)
+        .getOrElse(target[bumblezoneProfile ? 'fabricApiLatest' : 'fabricApiFloor'] as String)
 def jadeVersion = (acceptsOverrides ? providers.gradleProperty('jade_version') : providers.provider { null })
-        .getOrElse(target.fabricJadeFloor as String)
+        .getOrElse(target[bumblezoneProfile ? 'fabricJadeLatest' : 'fabricJadeFloor'] as String)
 
 dependencies {
     minecraft "com.mojang:minecraft:${target.minecraft}"

@@ -26,6 +26,7 @@ public final class BetterBees {
         VersionHooks.registerGameTests(modBus);
         container.registerConfig(ModConfig.Type.SERVER, BetterBeesConfig.SPEC);
         NeoForge.EVENT_BUS.addListener(this::serverStarted);
+        com.betterbees.compat.BeeCompatibility.initialize();
         LOGGER.info("Better Bees initialization complete");
     }
 
