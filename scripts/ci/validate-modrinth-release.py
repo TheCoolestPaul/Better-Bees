@@ -20,7 +20,7 @@ API_ROOT = "https://api.modrinth.com/v2"
 PROJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9]{8}$")
 VERSION_RANGE_PATTERN = re.compile(
     r"^\[(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*),"
-    r"(0|[1-9][0-9]*)\)$"
+    r"(0|[1-9][0-9]*)(?:\.(0|[1-9][0-9]*)(?:\.(0|[1-9][0-9]*))?)?\)$"
 )
 VERSION_PREFIX_PATTERN = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -123,8 +123,8 @@ def version_in_range(version_number: str, version_range: str) -> bool:
         return False
     version = tuple(int(version_match.group(index)) for index in range(1, 4))
     minimum = tuple(int(range_match.group(index)) for index in range(1, 4))
-    maximum_major = int(range_match.group(4))
-    return version >= minimum and version < (maximum_major, 0, 0)
+    maximum = tuple(int(range_match.group(index) or 0) for index in range(4, 7))
+    return minimum <= version < maximum
 
 
 def dependency_pairs(dependencies: list[dict[str, str]]) -> set[tuple[str, str]]:

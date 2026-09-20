@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
 spec = importlib.util.spec_from_file_location("target_matrix", Path(__file__).with_name("target-matrix.py"))
@@ -91,6 +93,33 @@ class MatrixTests(unittest.TestCase):
         fabric = next(r for r in rows if r['platform'] == 'fabric' and r['minecraft'] == '1.21.4')
         self.assertEqual(neo['jadeRange'], '[17.3.0,18)')
         self.assertEqual(fabric['jadeRange'], '[17.0.0,18)')
+
+    def test_release_dependencies_match_packaged_integrations(self):
+        for row in matrix.matrix('package'):
+            with self.subTest(minecraft=row['minecraft'], platform=row['platform']):
+                deps = {d['project_id']: d for d in row['dependencies']}
+                expected = {'nvQzSEkH': 'optional'}
+                if row['platform'] == 'fabric':
+                    expected['P7dR8mSH'] = 'required'
+                if row['minecraft'] == '1.21.1':
+                    if row['platform'] == 'neoforge':
+                        expected.update(LNytGWDc='optional', **{'38tpSycf': 'optional'})
+                        self.assertEqual(deps['LNytGWDc']['version_range'], '[6.0.10,6.1)')
+                        self.assertEqual(deps['38tpSycf']['version_range'], '[7.16.1,7.17)')
+                    else:
+                        expected['eA8SXqWL'] = 'optional'
+                        self.assertEqual(deps['eA8SXqWL']['version_range'], '[7.16.0,7.17)')
+                        self.assertEqual(row['loaders'], 'fabric quilt')
+                self.assertEqual({key: d['dependency_type'] for key, d in deps.items()}, expected)
+                with tempfile.TemporaryDirectory() as temporary:
+                    manifest = Path(temporary) / 'dependencies.json'
+                    manifest.write_text(json.dumps({'dependencies': row['dependencies']}))
+                    result = subprocess.run([
+                        sys.executable, str(matrix.ROOT / 'scripts/ci/validate-modrinth-release.py'),
+                        '--manifest', str(manifest), '--jade-version-range', row['jadeRange'],
+                        '--expected-version', '1.0.0', '--game-version', row['minecraft'],
+                        '--version-type', 'release'], capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == '__main__':

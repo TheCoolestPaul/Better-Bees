@@ -59,6 +59,17 @@ class ManifestValidationTests(unittest.TestCase):
         self.assertFalse(validator.version_in_range("15.1.5+neoforge", "[15.1.6,16)"))
         self.assertFalse(validator.version_in_range("16.0.0+neoforge", "[15.1.6,16)"))
 
+    def test_compatibility_range_boundaries(self):
+        for version_range, below, minimum, above in (
+            ('[6.0.10,6.1)', '6.0.9', '6.0.10', '6.1.0'),
+            ('[7.16.1,7.17)', '7.16.0', '7.16.1+1.21.1-neoforge', '7.17.0'),
+            ('[7.16.0,7.17)', '7.15.9', '7.16.0+1.21.1-fabric', '7.17.0'),
+        ):
+            with self.subTest(version_range=version_range):
+                self.assertFalse(validator.version_in_range(below, version_range))
+                self.assertTrue(validator.version_in_range(minimum, version_range))
+                self.assertFalse(validator.version_in_range(above, version_range))
+
 
 class ExistingVersionValidationTests(unittest.TestCase):
     def setUp(self):

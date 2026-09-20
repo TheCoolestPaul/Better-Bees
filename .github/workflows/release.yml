@@ -198,14 +198,12 @@ jobs:
           MC: ${{ matrix.minecraft }}
           PLATFORM: ${{ matrix.platform }}
           JADE_RANGE: ${{ matrix.jadeRange }}
-          FABRIC_API_RANGE: ${{ matrix.fabricApiRange }}
+          DEPENDENCIES: ${{ toJSON(matrix.dependencies) }}
           LOADERS: ${{ matrix.loaders }}
         run: |
           python3 - <<'PY'
           import json, os
-          deps=[{'name':'Jade','project_id':'nvQzSEkH','dependency_type':'optional','version_range':os.environ['JADE_RANGE']}]
-          if os.environ['PLATFORM']=='fabric':
-              deps.append({'name':'Fabric API','project_id':'P7dR8mSH','dependency_type':'required','version_range':os.environ['FABRIC_API_RANGE']})
+          deps=json.loads(os.environ['DEPENDENCIES'])
           json.dump({'dependencies':deps}, open('/tmp/dependencies.json','w'))
           PY
           loaders=(); for loader in $LOADERS; do loaders+=(--loader "$loader"); done
