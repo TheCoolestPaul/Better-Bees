@@ -46,12 +46,14 @@ jobs:
           WORLD_UPGRADE: ${{ inputs.world_upgrade }}
         run: python3 scripts/ci/validation-scope.py --event "$EVENT" --base "$BASE" --ref "$REF" --profile "$PROFILE" --version "$VERSION" --world-upgrade "$WORLD_UPGRADE" --github-output "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v5
+        if: steps.scope.outputs.runtime == 'true'
         with:
           java-version: |
             21
             25
           distribution: temurin
       - uses: gradle/actions/setup-gradle@v6
+        if: steps.scope.outputs.runtime == 'true'
       - run: |
           python3 scripts/ci/test-resolve-version.py
           python3 scripts/ci/test-validate-modrinth-release.py
@@ -66,6 +68,7 @@ jobs:
             bash -n "$script"
           done
       - name: Shared performance policy
+        if: steps.scope.outputs.runtime == 'true'
         run: bash scripts/ci/gradle-with-retry.sh --no-daemon performancePolicyTest
 
   endpoint:

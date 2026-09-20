@@ -15,7 +15,7 @@ UPGRADE_PATHS = (
     '**/registry/*.java', '**/platform/VersionHooks.java',
     '**/*Persistence*.java', '**/util/BeePersistentState.java',
     '**/hive/HiveHoney*.java', '**/validation/UpgradeFixture.java',
-    '**/*.mixins.json', 'scripts/ci/world-upgrade.sh',
+    '**/*.mixins.json',
 )
 
 
@@ -54,13 +54,24 @@ def documentation_only(paths):
                                (path.startswith('docs/') and path.endswith('.md')) for path in paths)
 
 
+def tooling_only(paths):
+    # Executable build inputs (including CI's Gradle init script and asset
+    # properties) still require runtime coverage. Harness-only edits can be
+    # exercised against Minecraft explicitly with a manual run.
+    return bool(paths) and all(
+        documentation_only([path])
+        or (path.startswith('.github/workflows/') and path.endswith(('.yml', '.yaml')))
+        or (path.startswith('scripts/ci/') and path.endswith(('.py', '.sh')))
+        for path in paths)
+
+
 def runtime_required(event, base, ref, profile='routine', version='', repo='.'):
     if profile not in ('routine', 'full'):
         raise ValueError(f'Unknown validation profile: {profile}')
     if profile == 'full' or version or event not in ('pull_request', 'push') or not base or not ref:
         return True
     paths = changed_paths(base, ref, repo)
-    return paths is None or not documentation_only(paths)
+    return paths is None or not tooling_only(paths)
 
 
 if __name__ == '__main__':

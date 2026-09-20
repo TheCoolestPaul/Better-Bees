@@ -59,6 +59,10 @@ class MatrixTests(unittest.TestCase):
     def test_workflow_routing(self):
         workflow = (matrix.ROOT / '.github/workflows/validate.yml').read_text()
         self.assertEqual(workflow.count('performancePolicyTest'), 1)
+        tooling = workflow.split('  endpoint:')[0]
+        for step in ('uses: actions/setup-java@v5', 'uses: gradle/actions/setup-gradle@v6',
+                     'name: Shared performance policy'):
+            self.assertIn(step + "\n        if: steps.scope.outputs.runtime == 'true'", tooling)
         self.assertIn("if: needs.tooling.outputs.world_upgrade == 'true'", workflow)
         self.assertNotIn("if: inputs.profile == 'full' && needs.tooling.outputs.runtime == 'true'", workflow)
         self.assertIn('platform: [neoforge, fabric, quilt]', workflow)

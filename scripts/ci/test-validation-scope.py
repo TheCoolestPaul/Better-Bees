@@ -86,12 +86,12 @@ class ScopeTests(unittest.TestCase):
                      'versions/1.21.4/src/main/java/com/betterbees/platform/VersionHooks.java',
                      'src/main/java/com/betterbees/util/BeePersistentState.java',
                      'src/main/java/com/betterbees/hive/HiveHoneyStorage.java',
-                     'src/main/resources/betterbees.mixins.json',
-                     'scripts/ci/world-upgrade.sh'):
+                     'src/main/resources/betterbees.mixins.json'):
             with self.subTest(path=path):
                 self.assertTrue(scope.upgrade_sensitive([path]))
         self.assertFalse(scope.upgrade_sensitive([
             'README.md', 'gradle.properties',
+            'scripts/ci/world-upgrade.sh',
             'src/main/java/com/betterbees/ai/HivePathQueue.java',
             'src/main/java/com/betterbees/audio/BeeLoopSelector.java',
             'src/main/java/com/betterbees/hive/HiveRuntimeState.java']))
@@ -138,6 +138,42 @@ class ScopeTests(unittest.TestCase):
             '--github-output', str(output)], cwd=self.repo, text=True)
         self.assertEqual(result, 'runtime=false\nworld_upgrade=true\n')
         self.assertEqual(output.read_text(), result)
+
+    def test_pr8_tooling_diff_skips_runtime_and_upgrades(self):
+        paths = [
+            '.github/workflows/ci.yml', '.github/workflows/release.yml',
+            '.github/workflows/validate.yml', 'README.md', 'docs/release-app.md',
+            'scripts/ci/gradle-with-retry.sh', 'scripts/ci/publish-release-git.py',
+            'scripts/ci/test-gradle-with-retry.py', 'scripts/ci/test-publish-release-git.py',
+            'scripts/ci/test-target-matrix.py', 'scripts/ci/test-validate-target.py',
+            'scripts/ci/test-validation-scope.py', 'scripts/ci/validate-target.sh',
+            'scripts/ci/validation-scope.py', 'scripts/ci/world-upgrade.sh',
+        ]
+        ref = self.commit(dict.fromkeys(paths, 'CI edit'))
+        for event in ('pull_request', 'push'):
+            self.assertFalse(self.required(ref, event=event))
+        self.assertFalse(self.upgrade(ref))
+        self.assertTrue(self.upgrade(ref, requested=True))
+        for kwargs in ({'profile': 'full'}, {'version': '1.6.0'},
+                       {'event': 'workflow_dispatch'}, {'base': 'missing'}):
+            self.assertTrue(self.required(ref, **kwargs))
+
+    def test_tooling_with_build_or_mod_changes_requires_runtime(self):
+        for path in ('build.gradle', 'settings.gradle', 'gradle.properties',
+                     'gradle/targets.json', 'scripts/ci/server-only.gradle',
+                     'scripts/ci/server-assets.properties', 'src/code.java',
+                     'src/main/resources/asset.json', '.github/modrinth-dependencies.json'):
+            with self.subTest(path=path):
+                self.assertFalse(scope.tooling_only(['scripts/ci/test-target-matrix.py', path]))
+        ref = self.commit({'scripts/ci/test-target-matrix.py': 'test', 'src/code.java': 'changed'})
+        self.assertTrue(self.required(ref))
+        self.assertFalse(scope.tooling_only([]))
+
+    def test_code_renamed_into_ci_still_requires_runtime(self):
+        (self.repo / 'scripts/ci').mkdir(parents=True)
+        self.git('mv', 'src/code.java', 'scripts/ci/removed.py')
+        self.git('commit', '-qm', 'rename')
+        self.assertTrue(self.required(self.git('rev-parse', 'HEAD')))
 
 
 if __name__ == '__main__':

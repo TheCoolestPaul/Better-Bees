@@ -195,30 +195,37 @@ with two profiles. Manual runs from **Actions > CI > Run workflow** default to
 | Profile | When | Jobs |
 |---|---|---|
 | Routine | PRs, `main` pushes, default manual run | **13**: 12 minimum-stack NeoForge/Fabric artifact builds and GameTest suites, plus tooling |
-| Documentation only | PRs and pushes changing only `README.md` or Markdown files under `docs/` | **1**: tooling |
+| Tooling/docs only | PRs and pushes changing only workflow YAML, CI Python/shell scripts, `README.md`, or Markdown under `docs/` | **1**: Python/shell tooling checks; no Java or Gradle setup |
 | Full | Every release; selectable manual run | **33**: 32 endpoint jobs plus tooling |
 | World upgrades | Persistence/Minecraft-target changes, or explicitly requested | **3 additional** sequential upgrade jobs, independent of profile |
 
 Counts exclude separate release packaging and publishing jobs. Tooling runs the
-Python and shell checks and the shared performance-policy test once. Routine
+Python and shell checks; it also runs the shared performance-policy test once
+when runtime validation is required. Routine
 endpoints do not prepare client assets, install graphics packages, or start clients.
 Full validation covers minimum and latest dependency stacks for six NeoForge,
 six Fabric, and four supported Quilt targets, with 32 client startup checks.
 Quilt runs GameTests and client startup without a separate artifact build;
 runtime tasks still compile Minecraft code as needed.
 
-Documentation classification compares the PR base commit with its checked-out
-merge revision, or the push's previous and new commits. Mixed changes, missing
-history, and empty or unusable diffs run runtime validation. Manual runs and
-releases always run the requested profile. Documentation changes still trigger
-CI and report completed checks.
+Tooling/docs classification compares the PR base commit with its checked-out
+merge revision, or the push's previous and new commits. Changes to mod source,
+resources, Gradle files, dependencies, or other unrecognized paths still run
+runtime validation, even when mixed with tooling edits. CI's Gradle init script
+and asset properties also retain runtime coverage. Missing history and empty or
+unusable diffs run runtime validation. Manual runs and releases always run the
+requested profile. Tooling/docs changes still report the required
+`validation / tooling` check. Use a manual full run to exercise changes to the
+runtime harness against Minecraft.
 
 Per-version GameTests always retain the focused persistence checks for honey,
 hive occupants, and hive-item data. Full validation does not automatically require
 the sequential world-upgrade chain. Upgrade coverage is selected when the diff
 changes persistence implementations, registry definitions, honey storage,
-version hooks, mixin configuration, Minecraft targets/module definitions, or the
-upgrade harness. Ordinary AI, pathfinding, and sound changes do not select it.
+version hooks, mixin configuration, or Minecraft targets/module definitions.
+Editing the upgrade harness alone does not start Minecraft; use the explicit
+`world_upgrade` input to exercise it. Ordinary AI, pathfinding, and sound changes
+do not select upgrade coverage.
 The path rules live in `scripts/ci/validation-scope.py`; update them when adding
 new persistence code.
 
