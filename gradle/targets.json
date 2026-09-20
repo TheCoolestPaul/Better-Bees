@@ -72,6 +72,7 @@
       "helper.getLevel().random": "helper.getLevel().getRandom()",
       "level.random": "level.getRandom()",
       "Holder<TestEnvironmentDefinition>": "Holder<TestEnvironmentDefinition<?>>",
+      "addActivityAndRemoveMemoriesWhenStopped": "addActivity",
       "Brain.provider(betterbees$memories(), betterbees$sensors())": "Brain.provider(betterbees$memories(), betterbees$sensors(), BeeAi::activities)",
       "public Brain<?> makeBrain(Dynamic<?> dynamic) { return BeeAi.makeBrain(brainProvider().makeBrain(dynamic)); }": "public Brain<?> makeBrain(Brain.Packed packed) { return BeeAi.makeBrain(brainProvider().makeBrain((Bee) (Object) this, packed)); }"
     },
@@ -100,6 +101,7 @@
       "helper.getLevel().random": "helper.getLevel().getRandom()",
       "level.random": "level.getRandom()",
       "Holder<TestEnvironmentDefinition>": "Holder<TestEnvironmentDefinition<?>>",
+      "addActivityAndRemoveMemoriesWhenStopped": "addActivity",
       "Brain.provider(betterbees$memories(), betterbees$sensors())": "Brain.provider(betterbees$memories(), betterbees$sensors(), BeeAi::activities)",
       "public Brain<?> makeBrain(Dynamic<?> dynamic) { return BeeAi.makeBrain(brainProvider().makeBrain(dynamic)); }": "public Brain<?> makeBrain(Brain.Packed packed) { return BeeAi.makeBrain(brainProvider().makeBrain((Bee) (Object) this, packed)); }",
       "import net.minecraft.world.entity.EntityType;": "import net.minecraft.world.entity.EntityType;\nimport net.minecraft.world.entity.EntityTypes;",

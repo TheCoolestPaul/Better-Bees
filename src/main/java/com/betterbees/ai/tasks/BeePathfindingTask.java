@@ -12,11 +12,15 @@ import net.minecraft.world.entity.ai.memory.MemoryStatus;
 import net.minecraft.world.entity.animal.Bee;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Map;
 
 public final class BeePathfindingTask extends Behavior<Bee> {
-    private CachedPath cached;
+    private Path ownedPath;
+    private Vec3 progressPosition;
+    private long progressTime;
+    private int progressNode;
 
     public BeePathfindingTask() {
         super(Map.of(MemoryModuleType.WALK_TARGET, MemoryStatus.VALUE_ABSENT));
@@ -42,32 +46,38 @@ public final class BeePathfindingTask extends Behavior<Bee> {
 
     @Override
     protected void start(ServerLevel level, Bee bee, long gameTime) {
-        selectOrReusePath(level, bee, gameTime);
+        selectPath(level, bee, gameTime);
     }
 
     @Override
     protected void tick(ServerLevel level, Bee bee, long gameTime) {
-        if (cached != null && cached.path != null && (gameTime - cached.createdAt > 50L
-                || gameTime - cached.createdAt > 5L && bee.getDeltaMovement().lengthSqr() <= 0.0025D
-                || bee.blockPosition().distManhattan(cached.path.getTarget()) <= 4)) {
-            selectOrReusePath(level, bee, gameTime);
+        // Never replace a route installed by another behavior (flower, temptation, or combat).
+        if (ownedPath != null && bee.getNavigation().getPath() == ownedPath) {
+            if (ownedPath.getNextNodeIndex() != progressNode
+                    || bee.position().distanceToSqr(progressPosition) >= 0.25D) {
+                rememberProgress(bee, gameTime);
+            } else if (gameTime - progressTime >= 40L) {
+                bee.getNavigation().stop();
+                selectPath(level, bee, gameTime);
+            }
         }
         if (bee.hasNectar()) bee.getBrain().setMemory(ModMemoryTypes.POLLINATING_COOLDOWN.get(), 400);
     }
 
-    private void selectOrReusePath(ServerLevel level, Bee bee, long gameTime) {
-        if (cached != null && cached.path != null && !cached.path.isDone()
-                && gameTime - cached.createdAt <= 50L
-                && !(bee.getDeltaMovement().lengthSqr() <= 0.0025D && gameTime - cached.createdAt > 5L)
-                && bee.blockPosition().distManhattan(cached.path.getTarget()) > 4) {
-            bee.getNavigation().moveTo(cached.path, 1.0D);
-            return;
-        }
+    private void rememberProgress(Bee bee, long gameTime) {
+        progressPosition = bee.position();
+        progressTime = gameTime;
+        progressNode = ownedPath.getNextNodeIndex();
+    }
+
+    private void selectPath(ServerLevel level, Bee bee, long gameTime) {
+        ownedPath = null;
         BlockPos origin = bee.blockPosition();
         BlockPos.MutableBlockPos candidate = origin.mutable();
         int surface = level.getHeight(Heightmap.Types.WORLD_SURFACE, origin.getX(), origin.getZ());
         BlockPos home = ((HiveMemory) bee).betterbees$getMemorizedHome();
         Entity leashHolder = bee.getLeashHolder();
+        boolean found = false;
         for (int attempt = 0; attempt < 12; attempt++) {
             int y = level.dimensionType().hasCeiling() || bee.getBlockY() <= surface + 3
                     ? bee.getRandom().nextInt(6) - 2 : bee.getRandom().nextInt(6) - 5;
@@ -75,19 +85,17 @@ public final class BeePathfindingTask extends Behavior<Bee> {
                     bee.getRandom().nextInt(21) - 10);
             boolean inHome = home == null || candidate.closerThan(home, BetterBeesConfig.maxWanderRadius());
             boolean inLeash = leashHolder == null || candidate.closerToCenterThan(leashHolder.position(), 10.0D);
-            if (inHome && inLeash && level.getBlockState(candidate.below(2)).isAir()) break;
+            if (inHome && inLeash && level.hasChunkAt(candidate)
+                    && origin.distManhattan(candidate) > 1 && level.getBlockState(candidate.below(2)).isAir()) {
+                found = true;
+                break;
+            }
         }
+        if (!found) return;
         Path path = bee.getNavigation().createPath(candidate.immutable(), 1);
-        if (path != null) bee.getNavigation().moveTo(path, 1.0D);
-        cached = new CachedPath(path, gameTime);
-    }
-
-    private static final class CachedPath {
-        private final Path path;
-        private final long createdAt;
-        private CachedPath(Path path, long createdAt) {
-            this.path = path;
-            this.createdAt = createdAt;
+        if (path != null && bee.getNavigation().moveTo(path, 1.0D)) {
+            ownedPath = path;
+            rememberProgress(bee, gameTime);
         }
     }
 }
