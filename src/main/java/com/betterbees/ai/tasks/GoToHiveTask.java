@@ -3,6 +3,7 @@ package com.betterbees.ai.tasks;
 import com.betterbees.ai.HivePathScheduler;
 import com.betterbees.ai.BeeAi;
 import com.betterbees.config.BetterBeesConfig;
+import com.betterbees.hive.HiveSafetyService;
 import com.betterbees.registry.ModMemoryTypes;
 import com.betterbees.util.HiveMemory;
 import net.minecraft.core.BlockPos;
@@ -31,6 +32,14 @@ public final class GoToHiveTask extends Behavior<Bee> {
         BlockPos home = ((HiveMemory) bee).betterbees$getMemorizedHome();
         if (home == null || !bee.getBrain().getMemory(ModMemoryTypes.WANTS_HIVE.get()).orElse(false)
                 || BeeAi.isHiveNearFire(level, bee)) return false;
+        // A full home cannot receive a scheduled path. Reject it here, including
+        // while queued or travelling, rather than waiting to reach entry range.
+        var hive = HiveSafetyService.loadedHive(level, home);
+        if (hive != null && hive.isFull()) {
+            ((HiveMemory) bee).betterbees$dropAndBlacklistHive(bee);
+            if (home.equals(bee.getNavigation().getTargetPos())) bee.getNavigation().stop();
+            return false;
+        }
         net.minecraft.world.entity.Entity leashHolder = bee.getLeashHolder();
         return leashHolder == null || home.closerToCenterThan(leashHolder.position(), 5.5D);
     }

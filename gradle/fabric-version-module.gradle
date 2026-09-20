@@ -193,7 +193,7 @@ def generateFabricGameTests = tasks.register('generateFabricGameTests') {
             text = text.replace('import net.minecraft.gametest.framework.GameTest;',
                     'import net.fabricmc.fabric.api.gametest.v1.GameTest;')
                     .replace('@GameTest(template = "empty")', '@GameTest(maxTicks = 100)')
-                    .replace('@GameTest(template = "empty", timeoutTicks = 400)', '@GameTest(maxTicks = 400)')
+                    .replaceAll('@GameTest\\(template = "empty", timeoutTicks = (\\d+)\\)', '@GameTest(maxTicks = $1)')
                     .replace('public static void ', 'public void ')
         } else {
             text = text.replace('import net.minecraft.gametest.framework.GameTest;',
@@ -201,7 +201,7 @@ def generateFabricGameTests = tasks.register('generateFabricGameTests') {
                     .replace('public final class BetterBeesGameTests {',
                             'public final class BetterBeesGameTests implements FabricGameTest {')
                     .replace('@GameTest(template = "empty")', '@GameTest(template = FabricGameTest.EMPTY_STRUCTURE)')
-                    .replace('@GameTest(template = "empty", timeoutTicks = 400)', '@GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = 400)')
+                    .replaceAll('@GameTest\\(template = "empty", timeoutTicks = (\\d+)\\)', '@GameTest(template = FabricGameTest.EMPTY_STRUCTURE, timeoutTicks = $1)')
         }
         def file = outputFile.get().asFile; file.parentFile.mkdirs(); file.setText(text, 'UTF-8')
     }

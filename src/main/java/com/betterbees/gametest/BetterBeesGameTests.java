@@ -372,6 +372,48 @@ public final class BetterBeesGameTests {
         });
     }
 
+    @GameTest(template = "empty", timeoutTicks = 800)
+    public static void returningBeeFindsAlternativeToFullHome(GameTestHelper helper) {
+        BlockPos fullPos = new BlockPos(1, 1, 2);
+        BlockPos alternativePos = new BlockPos(5, 1, 2);
+        // Keep ordinary cooldown wandering inside this fixture and within hive search range.
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 0, 0), new BlockPos(7, 7, 7))) {
+            if (pos.getX() == 0 || pos.getX() == 7 || pos.getY() == 0 || pos.getY() == 7
+                    || pos.getZ() == 0 || pos.getZ() == 7) helper.setBlock(pos, Blocks.GLASS);
+        }
+        helper.setBlock(fullPos, Blocks.BEE_NEST);
+        // Keep stored occupants from exiting during the two normal search cooldowns.
+        helper.setBlock(fullPos.north(), Blocks.STONE);
+        helper.setBlock(alternativePos, Blocks.BEEHIVE);
+        BeehiveBlockEntity full = VersionHooks.getBlockEntity(helper, fullPos, BeehiveBlockEntity.class);
+        BeehiveBlockEntity alternative = VersionHooks.getBlockEntity(helper, alternativePos, BeehiveBlockEntity.class);
+        fill(helper, full, BetterBeesConfig.hiveCapacity());
+        Bee bee = VersionHooks.createBee(helper.getLevel());
+        VersionHooks.assertTrue(helper, bee != null, "returning bee should be constructible");
+        BlockPos home = full.getBlockPos();
+        VersionHooks.moveTo(bee, home.getX() + 4.5D, home.getY() + 1.0D, home.getZ() + 0.5D);
+        bee.setAge(1_000);
+        ((HiveMemory) bee).betterbees$setMemorizedHome(home);
+        bee.getBrain().setMemory(ModMemoryTypes.WANTS_HIVE.get(), true);
+        helper.getLevel().addFreshEntity(bee);
+        // Run the real Brain, navigation and level scheduler; do not drive tasks manually.
+        helper.runAfterDelay(790, () -> {
+            if (bee.isAlive()) BetterBees.LOGGER.warn(
+                    "Full-home reproduction: pos={}, home={}, wantsHive={}, travelling={}, stuck={}, navigationDone={}",
+                    bee.position(), ((HiveMemory) bee).betterbees$getMemorizedHome(),
+                    bee.getBrain().getMemory(ModMemoryTypes.WANTS_HIVE.get()),
+                    bee.getBrain().getMemory(ModMemoryTypes.TRAVELLING_TICKS.get()),
+                    bee.getBrain().getMemory(ModMemoryTypes.STUCK_TICKS.get()), bee.getNavigation().isDone());
+        });
+        helper.succeedWhen(() -> {
+            VersionHooks.assertValueEqual(helper, full.getOccupantCount(), BetterBeesConfig.hiveCapacity(),
+                    "original home remains full throughout recovery");
+            VersionHooks.assertValueEqual(helper, alternative.getOccupantCount(), 1,
+                    "returning bee must abandon its full home and enter an available hive");
+            VersionHooks.assertTrue(helper, bee.isRemoved(), "returning bee is stored in the alternative hive");
+        });
+    }
+
     @GameTest(template = "empty")
     public static void entryRechecksFireAfterSharedSafeResult(GameTestHelper helper) {
         BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
@@ -508,6 +550,61 @@ public final class BetterBeesGameTests {
                     .contains(net.minecraft.core.GlobalPos.of(helper.getLevel().dimension(), home)), "blocked hive must be blacklisted");
             task.doStop(helper.getLevel(), bee, tick);
             bee.discard();
+        });
+    }
+
+    @GameTest(template = "empty")
+    public static void homeFillingWhilePathQueuedReleasesReturningBee(GameTestHelper helper) {
+        BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
+        BlockPos home = hive.getBlockPos();
+        Bee bee = queuedPathBee(helper, home);
+        var task = new GoToHiveTask();
+        var scheduler = HivePathScheduler.get(helper.getLevel());
+        long now = helper.getLevel().getGameTime();
+        VersionHooks.assertTrue(helper, task.tryStart(helper.getLevel(), bee, now), "return starts before hive fills");
+        task.tickOrStop(helper.getLevel(), bee, now);
+        var request = scheduler.request(bee, home, false);
+        fill(helper, hive, BetterBeesConfig.hiveCapacity());
+        task.tickOrStop(helper.getLevel(), bee, now + 1);
+        VersionHooks.assertTrue(helper, ((HiveMemory) bee).betterbees$getMemorizedHome() == null,
+                "a hive filling during a queue wait must be abandoned outside entry range");
+        VersionHooks.assertTrue(helper, request.result() == HivePathScheduler.Result.CANCELLED,
+                "full home's pending request is cancelled");
+        VersionHooks.assertFalse(helper, scheduler.pending(bee), "abandoned home leaves no queued work");
+        VersionHooks.assertTrue(helper, bee.getBrain().getMemory(ModMemoryTypes.WANTS_HIVE.get()).orElse(false),
+                "bee retains its intent to find shelter");
+        VersionHooks.assertTrue(helper, bee.getBrain().hasMemoryValue(ModMemoryTypes.COOLDOWN_LOCATE_HIVE.get()),
+                "full homes use the normal search cooldown");
+        VersionHooks.assertTrue(helper, bee.getBrain().getMemory(ModMemoryTypes.HIVE_BLACKLIST.get()).orElse(List.of())
+                .contains(net.minecraft.core.GlobalPos.of(helper.getLevel().dimension(), home)),
+                "full home is excluded from the next search");
+        bee.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void homeFillingDuringTravelStopsOldRoute(GameTestHelper helper) {
+        BeehiveBlockEntity hive = placeHive(helper, Blocks.BEEHIVE);
+        BlockPos home = hive.getBlockPos();
+        Bee bee = queuedPathBee(helper, home);
+        var task = new GoToHiveTask();
+        long now = helper.getLevel().getGameTime();
+        VersionHooks.assertTrue(helper, task.tryStart(helper.getLevel(), bee, now), "return starts before hive fills");
+        task.tickOrStop(helper.getLevel(), bee, now);
+        var request = HivePathScheduler.get(helper.getLevel()).request(bee, home, false);
+        helper.runAfterDelay(20, () -> {
+            VersionHooks.assertTrue(helper, request.result() == HivePathScheduler.Result.REACHED,
+                    "scheduler must establish a reachable route before hive fills");
+            VersionHooks.assertFalse(helper, bee.getNavigation().isDone(), "old hive route is active");
+            fill(helper, hive, BetterBeesConfig.hiveCapacity());
+            task.tickOrStop(helper.getLevel(), bee, helper.getLevel().getGameTime());
+            VersionHooks.assertTrue(helper, ((HiveMemory) bee).betterbees$getMemorizedHome() == null,
+                    "bee abandons home that fills during travel");
+            VersionHooks.assertTrue(helper, bee.getNavigation().isDone(), "abandoned home's route stops");
+            VersionHooks.assertTrue(helper, bee.getBrain().getMemory(ModMemoryTypes.WANTS_HIVE.get()).orElse(false),
+                    "return intent survives abandoning the old route");
+            bee.discard();
+            helper.succeed();
         });
     }
 
@@ -1200,6 +1297,78 @@ public final class BetterBeesGameTests {
     private static BeehiveBlockEntity placeHive(GameTestHelper helper, Block block) {
         helper.setBlock(HIVE_POS, block);
         return VersionHooks.getBlockEntity(helper, HIVE_POS, BeehiveBlockEntity.class);
+    }
+
+    @GameTest(template = "empty")
+    public static void totalBeelocationAcceptsLargerNests(GameTestHelper helper) {
+        for (int count : new int[] {3, 4, 20}) {
+            checkBeelocationHarvest(helper, Blocks.BEE_NEST, count, true, true);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void totalBeelocationRetainsVanillaRequirements(GameTestHelper helper) {
+        checkBeelocationHarvest(helper, Blocks.BEE_NEST, 0, true, false);
+        checkBeelocationHarvest(helper, Blocks.BEE_NEST, 2, true, false);
+        checkBeelocationHarvest(helper, Blocks.BEE_NEST, 3, false, false);
+        checkBeelocationHarvest(helper, Blocks.BEEHIVE, 3, true, false);
+        helper.succeed();
+    }
+
+    private static void checkBeelocationHarvest(GameTestHelper helper, Block block, int count,
+                                                boolean silkTouch, boolean shouldAward) {
+        ServerLevel level = helper.getLevel();
+        var cookie = net.minecraft.server.network.CommonListenerCookie.createInitial(
+                new com.mojang.authlib.GameProfile(UUID.randomUUID(), "beelocation-test"), false);
+        var player = new net.minecraft.server.level.ServerPlayer(level.getServer(), level,
+                cookie.gameProfile(), cookie.clientInformation());
+        var connection = new net.minecraft.network.Connection(net.minecraft.network.protocol.PacketFlow.SERVERBOUND);
+        var channel = new io.netty.channel.embedded.EmbeddedChannel(connection);
+        level.getServer().getPlayerList().placeNewPlayer(connection, player, cookie);
+        var occupants = new java.util.ArrayList<UUID>();
+        var drops = new java.util.ArrayList<net.minecraft.world.entity.item.ItemEntity>();
+        try {
+            player.setGameMode(GameType.SURVIVAL);
+            var advancement = level.getServer().getAdvancements().get(
+                    net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("minecraft", "husbandry/silk_touch_nest"));
+            VersionHooks.assertTrue(helper, advancement != null, "vanilla advancement must be loaded");
+            BeehiveBlockEntity hive = placeHive(helper, block);
+            for (int i = 0; i < count; i++) {
+                Bee bee = VersionHooks.createBee(level);
+                occupants.add(bee.getUUID());
+                hive.storeBee(BeehiveBlockEntity.Occupant.of(bee));
+                bee.discard();
+            }
+            ItemStack tool = new ItemStack(Items.DIAMOND_AXE);
+            if (silkTouch) tool.enchant(level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                    .getOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), 1);
+            player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, tool);
+            BlockPos pos = hive.getBlockPos();
+            player.setPos(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 2.5D);
+            VersionHooks.assertTrue(helper, player.gameMode.destroyBlock(pos), "survival player must break the nest");
+            drops.addAll(level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    new net.minecraft.world.phys.AABB(pos).inflate(2.0D)));
+            VersionHooks.assertValueEqual(helper, player.getAdvancements().getOrStartProgress(advancement).isDone(),
+                    shouldAward, "Total Beelocation: block=" + block + ", bees=" + count + ", silkTouch=" + silkTouch);
+            if (silkTouch) {
+                ItemStack dropped = drops.stream().map(net.minecraft.world.entity.item.ItemEntity::getItem)
+                        .filter(stack -> stack.is(block.asItem())).findFirst().orElse(ItemStack.EMPTY);
+                VersionHooks.assertFalse(helper, dropped.isEmpty(), "Silk Touch must drop the hive item");
+                var restored = new BeehiveBlockEntity(pos, block.defaultBlockState());
+                restored.applyComponentsFromItemStack(dropped);
+                VersionHooks.assertValueEqual(helper, restored.getOccupantCount(), count,
+                        "Silk Touch preserves every occupant when the item is restored");
+            }
+        } finally {
+            for (UUID id : occupants) {
+                Entity released = level.getEntity(id);
+                if (released != null) released.discard();
+            }
+            drops.forEach(Entity::discard);
+            level.getServer().getPlayerList().remove(player);
+            channel.finishAndReleaseAll();
+        }
     }
 
     private static void fill(GameTestHelper helper, BeehiveBlockEntity hive, int count) {

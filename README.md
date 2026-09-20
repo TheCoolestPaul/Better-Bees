@@ -44,6 +44,8 @@ jar are intentionally limited to the lines tested for that target.
   blacklisted.
 - Persistent memorized hive and AI cooldown data.
 - Configurable hive/nest capacity, defaulting to 20.
+- Total Beelocation accepts Silk Touch mining of a bee nest containing at least
+  three bees, including nests above vanilla capacity.
 - Staggered indoor breeding checks with no unloaded-chunk catch-up and no
   per-tick occupant deserialization.
 - Existing over-capacity hives are retained when capacity is lowered.
