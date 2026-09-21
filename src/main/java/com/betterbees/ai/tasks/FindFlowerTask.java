@@ -29,6 +29,7 @@ public final class FindFlowerTask extends Behavior<Bee> {
     private long handledGeneration;
     private LocalSearch localSearch;
     private int pathFailures;
+    private long nextPathAttempt;
 
     public FindFlowerTask() {
         super(Map.of(ModMemoryTypes.POLLINATING_COOLDOWN.get(), MemoryStatus.VALUE_ABSENT), 600);
@@ -48,6 +49,7 @@ public final class FindFlowerTask extends Behavior<Bee> {
     protected void start(ServerLevel level, Bee bee, long gameTime) {
         candidate = null;
         pathFailures = 0;
+        nextPathAttempt = gameTime;
         BlockPos home = usableSharedHome(level, bee);
         if (home != null) {
             localSearch = null;
@@ -87,16 +89,21 @@ public final class FindFlowerTask extends Behavior<Bee> {
             abandonAndFail(level, bee, false);
             return;
         }
-        if (bee.getNavigation().isDone() && !pathRandomlyTowards(bee, candidate)) {
-            if (++pathFailures >= 3) abandonAndFail(level, bee, false);
-            return;
-        }
-        if (!bee.getNavigation().isDone()) pathFailures = 0;
-        if (bee.blockPosition().closerThan(candidate, 2.0D) && validFlower(level, candidate)) {
+        // Arrival must precede path creation: nearby intermediate targets can already be reached.
+        if (bee.blockPosition().closerThan(candidate, 2.0D)) {
             bee.getBrain().setMemory(ModMemoryTypes.FLOWER_POS.get(), GlobalPos.of(level.dimension(), candidate));
             bee.getBrain().setMemory(ModMemoryTypes.SEARCH_ATTEMPTS.get(), 0);
             candidate = null;
             localSearch = null;
+            return;
+        }
+        if (bee.getNavigation().isDone() && gameTime >= nextPathAttempt) {
+            nextPathAttempt = gameTime + 10L;
+            if (pathRandomlyTowards(bee, candidate)) {
+                pathFailures = 0;
+            } else if (++pathFailures >= 3) {
+                abandonAndFail(level, bee, false);
+            }
         }
     }
 
@@ -160,14 +167,22 @@ public final class FindFlowerTask extends Behavior<Bee> {
         int yDelta = target.getY() - bee.getBlockY();
         int yAdjust = yDelta > 2 ? 4 : yDelta < -2 ? -4 : 0;
         int distance = bee.blockPosition().distManhattan(target);
+        // Route to the actual flower at close range instead of repeatedly sampling a reached waypoint.
+        if (distance < 15) {
+            Path direct = NavigationBudget.createPath(bee.getNavigation(), 0.5F, target, 1);
+            if (direct != null && direct.canReach() && direct.getNodeCount() > 1
+                    && bee.getNavigation().moveTo(direct, 0.6D)) return true;
+        }
         int horizontal = distance < 15 ? Math.max(1, distance / 2) : 6;
         int vertical = distance < 15 ? Math.max(1, distance / 2) : 8;
         Vec3 next = AirRandomPos.getPosTowards(bee, horizontal, vertical, yAdjust, targetVec, (float) Math.PI / 10.0F);
-        if (next != null) {
-            NavigationBudget.moveTo(bee.getNavigation(), 0.5F, next.x, next.y, next.z, 0.6D);
-        }
-        Path path = bee.getNavigation().getPath();
-        return path != null && path.canReach();
+        if (next == null) return false;
+        BlockPos waypoint = BlockPos.containing(next);
+        if (bee.blockPosition().distManhattan(waypoint) <= 1
+                || !bee.level().hasChunkAt(waypoint)) return false;
+        Path path = NavigationBudget.createPath(bee.getNavigation(), 0.5F, waypoint, 1);
+        return path != null && path.canReach() && path.getNodeCount() > 1
+                && bee.getNavigation().moveTo(path, 0.6D);
     }
 
     private static void retrySoon(ServerLevel level, Bee bee) {

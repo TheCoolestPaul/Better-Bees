@@ -8,6 +8,7 @@
     "BeeMixin",
     "BrainSensorsAccessor",
     "BeeSensingBrainMixin",
+    "BeeBrainSchedulingMixin",
     "SensorRangeMixin",
     "BeePersistenceMixin",
     "BeeSpawnMixin",
